@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Speedrun Splitter</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main>
+    <!-- Run Header (separate from table) -->
+    <div class="run-header">
+      <div class="run-icon">🏁</div>
+      <div class="run-title" id="run-title">Run Title</div>
+    </div>
+    
+    <table class="splits-table">
+      <thead>
+        <tr class="columns">
+          <th>Split</th>
+          <th>Total</th>
+          <th>This Segment</th>
+          <th>Diff</th>
+          <th>Best Total</th>
+          <th>Best This Segment</th>
+          <th>Splits of Best Complete Run</th>
+        </tr>
+      </thead>
+      <tbody id="splits-body">
+        <!-- rows injected by main.js -->
+      </tbody>
+    </table>
+    
+    <!-- Summary Statistics Table -->
+    <table class="summary-table">
+      <tbody>
+        <tr>
+          <td class="summary-label">Current Total Timer</td>
+          <td id="total-timer" class="summary-value">00:00.000</td>
+        </tr>
+        <tr>
+          <td class="summary-label">Best Complete Run:</td>
+          <td id="best-complete" class="summary-value">—</td>
+        </tr>
+        <tr>
+          <td class="summary-label">Sum of Best Segments:</td>
+          <td id="sum-best-segments" class="summary-value">—</td>
+        </tr>
+      </tbody>
+    </table>
+  </main>
+  <!-- Config Modal -->
+  <div id="cfg-backdrop" class="modal-backdrop" hidden>
+    <div class="modal">
+      <header>
+        <h3>Configuration</h3>
+      </header>
+      <section>
+        <form id="cfg-form">
+          <div class="cfg-file">
+            <label>Save File</label>
+            <div class="cfg-file-actions">
+              <button type="button" id="cfg-choose-save">Open File…</button>
+              <button type="button" id="cfg-clear-save">Clear</button>
+            </div>
+            <div id="recent-files-container" class="recent-files">
+              <!-- Recent files buttons will be added here dynamically -->
+            </div>
+          </div>
+          <label>Run Title
+            <input id="cfg-title" type="text" placeholder="Run Title" />
+          </label>
+          <div class="cfg-file">
+            <label>Run Icon
+              <div class="cfg-icon-container">
+                <img id="cfg-icon-preview" src="" alt="" style="display: none; width: 32px; height: 32px; object-fit: contain; cursor: pointer; border: 1px solid #2a2d37; border-radius: 4px; margin-right: 8px;">
+                <input id="cfg-icon-path" type="text" placeholder="No icon selected" readonly />
+              </div>
+            </label>
+            <div class="cfg-file-actions">
+              <button type="button" id="cfg-choose-icon">Choose Icon…</button>
+              <button type="button" id="cfg-clear-icon">Clear</button>
+            </div>
+          </div>
+          <label>Number of splits
+            <input id="cfg-count" type="number" min="1" max="50" value="3" />
+          </label>
+          
+          <div class="cfg-section">
+            <label>Split Table Settings</label>
+            <div class="table-settings">
+              <label class="setting-row">
+                <span>Row Height Preset:</span>
+                <select id="row-height-preset">
+                  <option value="custom">Custom</option>
+                  <option value="compact">Compact</option>
+                  <option value="normal" selected>Normal</option>
+                  <option value="large">Large</option>
+                  <option value="extra-large">Extra Large</option>
+                </select>
+              </label>
+            </div>
+            <table class="row-height-config-table">
+              <thead>
+                <tr>
+                  <th>Property</th>
+                  <th>Value (px)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Row Height</td>
+                  <td><input type="number" id="row-height-value" value="36" min="16" max="100" step="1"></td>
+                </tr>
+                <tr>
+                  <td>Padding Top</td>
+                  <td><input type="number" id="row-padding-top" value="8" min="0" max="50" step="1"></td>
+                </tr>
+                <tr>
+                  <td>Padding Bottom</td>
+                  <td><input type="number" id="row-padding-bottom" value="8" min="0" max="50" step="1"></td>
+                </tr>
+                <tr>
+                  <td>Margin Top</td>
+                  <td><input type="number" id="row-margin-top" value="0" min="0" max="20" step="1"></td>
+                </tr>
+                <tr>
+                  <td>Margin Bottom</td>
+                  <td><input type="number" id="row-margin-bottom" value="0" min="0" max="20" step="1"></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <div class="cfg-section">
+            <label>Column Configuration</label>
+            <table class="column-config-table">
+              <thead>
+                <tr>
+                  <th>Column</th>
+                  <th>Visible</th>
+                  <th>Width (px)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Split</td>
+                  <td><input type="checkbox" id="col-split" checked></td>
+                  <td><input type="number" id="col-split-width" value="150" min="50" max="400" step="1"></td>
+                </tr>
+                <tr>
+                  <td>Total</td>
+                  <td><input type="checkbox" id="col-total" checked></td>
+                  <td><input type="number" id="col-total-width" value="100" min="50" max="400" step="1"></td>
+                </tr>
+                <tr>
+                  <td>This Segment</td>
+                  <td><input type="checkbox" id="col-segment" checked></td>
+                  <td><input type="number" id="col-segment-width" value="100" min="50" max="400" step="1"></td>
+                </tr>
+                <tr>
+                  <td>Diff</td>
+                  <td><input type="checkbox" id="col-diff" checked></td>
+                  <td><input type="number" id="col-diff-width" value="80" min="50" max="400" step="1"></td>
+                </tr>
+                <tr>
+                  <td>Best Total</td>
+                  <td><input type="checkbox" id="col-best-total" checked></td>
+                  <td><input type="number" id="col-best-total-width" value="100" min="50" max="400" step="1"></td>
+                </tr>
+                <tr>
+                  <td>Best This Segment</td>
+                  <td><input type="checkbox" id="col-best-segment" checked></td>
+                  <td><input type="number" id="col-best-segment-width" value="100" min="50" max="400" step="1"></td>
+                </tr>
+                <tr>
+                  <td>Best Complete Run</td>
+                  <td><input type="checkbox" id="col-best-complete" checked></td>
+                  <td><input type="number" id="col-best-complete-width" value="100" min="50" max="400" step="1"></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <div class="cfg-section">
+            <label>Summary Display</label>
+            <div class="summary-settings">
+              <label class="setting-row">
+                <span>Total Timer Font Size:</span>
+                <select id="total-timer-font">
+                  <option value="small">Small</option>
+                  <option value="normal">Normal</option>
+                  <option value="large" selected>Large</option>
+                  <option value="extra-large">Extra Large</option>
+                </select>
+              </label>
+              <label class="setting-row">
+                <span>Summary Font Size:</span>
+                <select id="summary-font">
+                  <option value="small">Small</option>
+                  <option value="normal" selected>Normal</option>
+                  <option value="large">Large</option>
+                  <option value="extra-large">Extra Large</option>
+                </select>
+              </label>
+              <div class="summary-toggles">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="show-sum-best" checked>
+                  <span>Show Sum of Best Segments</span>
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="show-best-complete" checked>
+                  <span>Show Best Complete Run</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <table class="cfg-table">
+            <thead><tr><th>#</th><th>Name</th></tr></thead>
+            <tbody id="cfg-splits"></tbody>
+          </table>
+          <div class="cfg-actions">
+            <button type="button" id="cfg-cancel">Cancel</button>
+            <button type="button" id="cfg-reset-storage" title="Clear PBs and settings">Reset Saved Values</button>
+            <button type="submit" id="cfg-save">Save</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </div>
+  <!-- In-app File Picker Modal -->
+  <div id="file-backdrop" class="modal-backdrop" hidden>
+    <div class="modal">
+      <header>
+        <h3>Choose Save File</h3>
+      </header>
+      <section>
+        <div class="fp-toolbar">
+          <div class="fp-path">Path: <span id="fp-path"></span></div>
+          <div class="fp-nav">
+            <button type="button" id="fp-home">Home</button>
+            <button type="button" id="fp-up">Up</button>
+          </div>
+        </div>
+        <div id="fp-list" class="fp-list" role="listbox" aria-label="Files and folders"></div>
+        <div class="fp-name">
+          <label>File name
+            <input id="fp-filename" type="text" placeholder="splits.json" />
+          </label>
+        </div>
+        <div class="cfg-actions">
+          <button type="button" id="fp-cancel">Cancel</button>
+          <button type="button" id="fp-choose">Choose</button>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "main",
+    "config"
+  ],
+  "permissions": [
+    "core:default",
+    "log:default",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    "fs:allow-create",
+    "fs:allow-exists",
+    "fs:allow-read-dir",
+    "dialog:allow-message"
+  ]
+}

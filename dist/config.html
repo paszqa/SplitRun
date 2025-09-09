@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Configuration</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <style>
+    body { padding: 16px; }
+    form { display: grid; gap: 12px; }
+    label { display: grid; gap: 6px; }
+    input[type="text"], input[type="number"] { background:#16181e; color:var(--fg); border:1px solid #2a2d37; border-radius:6px; padding:8px 10px; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { padding: 8px 6px; border-bottom: 1px solid var(--muted); }
+    tfoot td { border-bottom: none; }
+    .actions { display:flex; gap: 8px; justify-content: end; padding-top: 8px; }
+    button { background:#2a2f3a; color:var(--fg); border:1px solid #2a2d37; padding:8px 12px; border-radius:6px; }
+    button:hover { filter: brightness(1.1); }
+  </style>
+</head>
+<body>
+  <h2>Configuration</h2>
+  <form id="cfg-form">
+    <label>
+      Run Title
+      <input id="cfg-title" type="text" placeholder="Run Title" />
+    </label>
+    <label>
+      Number of splits
+      <input id="cfg-count" type="number" min="1" max="50" value="3" />
+    </label>
+    <table>
+      <thead>
+        <tr><th>#</th><th>Name</th></tr>
+      </thead>
+      <tbody id="cfg-splits"></tbody>
+    </table>
+    <div class="actions">
+      <button type="button" id="cfg-cancel">Cancel</button>
+      <button type="submit" id="cfg-save">Save</button>
+    </div>
+  </form>
+  <script type="module" src="./config.js"></script>
+</body>
+</html>
