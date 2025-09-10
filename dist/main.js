@@ -40,6 +40,19 @@
   let runTitle = 'Run Title';
   let iconPath = ''; // Path to the run icon
   let splitNames = ['Split 1', 'Split 2', 'Split 3'];
+  let splitIcons = ['', '', '']; // Icons for each split (empty = default icon)
+  let backgroundColor = '#0e0f13'; // Background color for the app
+  let runTitleColor = '#c9d1d9';
+  let splitTableColor = '#c9d1d9';
+  let totalTimerTextColor = '#8b9bb4';
+  let totalTimerDigitsColor = '#c9d1d9';
+  let sumBestSegmentsColor = '#c9d1d9';
+  let bestCompleteRunColor = '#c9d1d9';
+  let splitBg1Color = '#0000000a';
+  let splitBg2Color = '#00000015';
+  
+  // Welcome screen state
+  let isWelcomeScreen = true;
   
   // Global file browser state
   let fpCurrentPath = null; // Current path for save file browser
@@ -48,7 +61,7 @@
   const STORAGE_KEY = 'speedrun_splitter_state_v1';
   const SAVE_PATH_KEY = 'speedrun_splitter_save_path_v1';
   const GLOBAL_SETTINGS_KEY = 'speedrun_splitter_global_v1';
-  
+
   function loadState() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -56,6 +69,28 @@
       return JSON.parse(raw);
     } catch { return null; }
   }
+  
+  // Load saved state on app startup
+  const savedState = loadState();
+  if (savedState) {
+    runTitle = savedState.runTitle || runTitle;
+    iconPath = savedState.iconPath || iconPath;
+    splitNames = savedState.splitNames || splitNames;
+    splitIcons = savedState.splitIcons || splitIcons;
+    console.log('Loaded state from localStorage:', savedState);
+    console.log('Loaded splitIcons:', splitIcons);
+  }
+  
+  // Apply default background color on startup (will be overridden when save file is loaded)
+  document.documentElement.style.setProperty('--bg', backgroundColor);
+  document.documentElement.style.setProperty('--run-title-color', runTitleColor);
+  document.documentElement.style.setProperty('--split-table-color', splitTableColor);
+  document.documentElement.style.setProperty('--total-timer-text-color', totalTimerTextColor);
+  document.documentElement.style.setProperty('--total-timer-digits-color', totalTimerDigitsColor);
+  document.documentElement.style.setProperty('--sum-best-segments-color', sumBestSegmentsColor);
+  document.documentElement.style.setProperty('--best-complete-run-color', bestCompleteRunColor);
+  document.documentElement.style.setProperty('--split-bg-1', splitBg1Color);
+  document.documentElement.style.setProperty('--split-bg-2', splitBg2Color);
   function saveState(state) {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
   }
@@ -72,6 +107,354 @@
     try { localStorage.setItem(GLOBAL_SETTINGS_KEY, JSON.stringify(settings)); } catch {}
   }
   
+  function addRecentFile(filePath) {
+    if (!filePath) return;
+    
+    const globalSettings = loadGlobalSettings();
+    let recentFiles = globalSettings.recentFiles || [];
+    
+    // Remove if already exists
+    recentFiles = recentFiles.filter(f => f !== filePath);
+    // Add to beginning
+    recentFiles.unshift(filePath);
+    // Keep only first 5
+    recentFiles = recentFiles.slice(0, 5);
+    
+    globalSettings.recentFiles = recentFiles;
+    saveGlobalSettings(globalSettings);
+  }
+
+  // Welcome Screen Functions
+  function showWelcomeScreen() {
+    console.log('Showing welcome screen');
+    isWelcomeScreen = true;
+    const main = document.querySelector('main');
+    
+    main.innerHTML = `
+      <div class="welcome-screen">
+        <div class="welcome-content">
+          <div class="welcome-logo">
+            <div class="logo-icon">
+              <img src="logo1.png" alt="SplitRun" width="300" height="80">
+            </div>
+          </div>
+          
+          <div class="welcome-menu">
+            <div class="menu-section">
+              <button class="menu-button primary" id="welcome-new">
+                📄 New Split File...
+              </button>
+              <button class="menu-button primary" id="welcome-open">
+                📂 Open Split File...
+              </button>
+            </div>
+            
+            <div class="menu-section recent-section" id="recent-section" style="display: none;">
+              <h3>Recent Files</h3>
+              <div class="recent-files-list" id="recent-files-list">
+                <!-- Recent files will be populated here -->
+              </div>
+            </div>
+            
+            <div class="menu-section">
+              <button class="menu-button secondary" id="welcome-exit">
+                ❌ Exit
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Populate recent files
+    updateRecentFilesList();
+    
+    // Setup event listeners
+    document.getElementById('welcome-new').addEventListener('click', () => {
+      console.log('New file clicked');
+      createNewSplitFile();
+    });
+    
+    document.getElementById('welcome-open').addEventListener('click', () => {
+      console.log('Open file clicked');
+      openSplitFile();
+    });
+    
+    document.getElementById('welcome-exit').addEventListener('click', () => {
+      console.log('Exit clicked');
+      exitApplication();
+    });
+  }
+  
+  function updateRecentFilesList() {
+    const globalSettings = loadGlobalSettings();
+    const recentFiles = globalSettings.recentFiles || [];
+    const recentSection = document.getElementById('recent-section');
+    const recentFilesList = document.getElementById('recent-files-list');
+    
+    if (recentFiles.length > 0) {
+      recentSection.style.display = 'block';
+      recentFilesList.innerHTML = '';
+      
+      recentFiles.forEach((filePath, index) => {
+        const fileName = filePath.split('/').pop() || filePath;
+        const button = document.createElement('button');
+        button.className = 'menu-button recent';
+        button.innerHTML = `📄 ${fileName}`;
+        button.title = filePath;
+        button.addEventListener('click', () => {
+          console.log('Recent file clicked:', filePath);
+          loadSplitFileFromPath(filePath);
+        });
+        recentFilesList.appendChild(button);
+      });
+    } else {
+      recentSection.style.display = 'none';
+    }
+  }
+  
+  function hideWelcomeScreen() {
+    console.log('Hiding welcome screen');
+    isWelcomeScreen = false;
+    const main = document.querySelector('main');
+    
+    // Restore original content
+    main.innerHTML = `
+      <!-- Run Header (separate from table) -->
+      <div class="run-header">
+        <div class="run-icon">🏁</div>
+        <div class="run-title" id="run-title">Run Title</div>
+      </div>
+      
+      <table class="splits-table">
+        <thead>
+          <tr class="columns">
+          <th>Split</th>
+          <th title="Total Time">T<sub>T</sub></th>
+          <th title="This Segment">SEG</th>
+          <th title="Diff vs Best Total">Diff<sub>T</sub></th>
+          <th title="Diff vs Best This Segment">Diff<sub>SEG</sub></th>
+          <th title="Diff vs Best Complete Run">Diff<sub>BCR</sub></th>
+          <th title="Best Total">Best<sub>T</sub></th>
+          <th title="Best This Segment">Best<sub>SEG</sub></th>
+          <th title="Best Complete Run">BCR</th>
+          </tr>
+        </thead>
+        <tbody id="splits-body">
+          <!-- rows injected by main.js -->
+        </tbody>
+      </table>
+      
+      <!-- Summary Statistics Table -->
+      <table class="summary-table">
+        <tbody><tr>
+        <td id="total-timer" class="summary-value">00:00.000</td>
+        </tr></tbody>
+      </table>
+      <table class="summary-table">
+        <tbody>
+          <tr>
+            <td class="summary-label">Best Complete Run:</td>
+            <td id="best-complete" class="summary-value">—</td>
+          </tr>
+          <tr>
+            <td class="summary-label">Sum of Best Segments:</td>
+            <td id="sum-best-segments" class="summary-value">—</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+    
+    // Re-initialize the splits interface
+    renderRows();
+    setActiveRow(-1);
+    buildContextMenu();
+  }
+  
+  function createNewSplitFile() {
+    // First ask for save location, then open config
+    showSaveLocationPicker();
+  }
+  
+  // File browser for choosing save location for new files
+  async function showSaveLocationPicker() {
+    const modal = document.createElement('div');
+    modal.className = 'file-browser-modal';
+    modal.innerHTML = `
+      <div class="file-browser-content">
+        <div class="file-browser-header">
+          <h3>Choose Save Location for New Split File</h3>
+          <button class="close-btn" onclick="this.closest('.file-browser-modal').remove()">×</button>
+        </div>
+        <div class="file-browser-path">
+          <button id="fbHomeSave">🏠</button>
+          <button id="fbUpSave">⬆️</button>
+          <span id="fbPathSave">/</span>
+        </div>
+        <div class="file-browser-list" id="fbListSave">
+          Loading...
+        </div>
+        <div class="file-browser-input">
+          <input type="text" id="fbFilenameSave" placeholder="my-splits.json" value="my-splits.json">
+          <button id="fbCreateFile">Create</button>
+          <button id="fbCancelSave">Cancel</button>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    let currentPath = '/';
+    
+    // Initialize with home directory
+    try {
+      currentPath = await window.__TAURI__.core.invoke('home_dir');
+    } catch (error) {
+      console.error('Failed to get home directory:', error);
+      currentPath = '/';
+    }
+    
+    // Load directory function
+    async function loadDir(path) {
+      try {
+        const result = await window.__TAURI__.core.invoke('list_dir', { path });
+        const listEl = document.getElementById('fbListSave');
+        const pathEl = document.getElementById('fbPathSave');
+        
+        pathEl.textContent = path;
+        currentPath = path;
+        
+        listEl.innerHTML = '';
+        
+        // Sort: directories first, then files
+        result.sort((a, b) => {
+          if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        });
+        
+        result.forEach(item => {
+          const el = document.createElement('div');
+          el.className = 'file-browser-item';
+          el.innerHTML = `${item.is_dir ? '📁' : '📄'} ${item.name}`;
+          el.onclick = () => {
+            if (item.is_dir) {
+              const newPath = path.endsWith('/') ? path + item.name : path + '/' + item.name;
+              loadDir(newPath);
+            } else if (item.name.endsWith('.json')) {
+              // If user clicks on a JSON file, pre-fill the filename
+              document.getElementById('fbFilenameSave').value = item.name;
+            }
+          };
+          listEl.appendChild(el);
+        });
+      } catch (error) {
+        console.error('Failed to read directory:', error);
+        document.getElementById('fbListSave').innerHTML = 'Failed to load directory';
+      }
+    }
+    
+    // Event handlers
+    document.getElementById('fbHomeSave').onclick = async () => {
+      try {
+        const homeDir = await window.__TAURI__.core.invoke('home_dir');
+        loadDir(homeDir);
+      } catch (error) {
+        loadDir('/');
+      }
+    };
+    
+    document.getElementById('fbUpSave').onclick = () => {
+      const parts = currentPath.split('/').filter(p => p);
+      if (parts.length > 0) {
+        parts.pop();
+        loadDir('/' + parts.join('/'));
+      }
+    };
+    
+    document.getElementById('fbCreateFile').onclick = () => {
+      const filename = document.getElementById('fbFilenameSave').value.trim();
+      if (filename) {
+        const fullPath = currentPath.endsWith('/') ? currentPath + filename : currentPath + '/' + filename;
+        console.log('Creating new split file at:', fullPath);
+        
+        // Save the path and proceed with file creation
+        saveSavePath(fullPath);
+        addRecentFile(fullPath);
+        
+        // Reset to default state
+        runTitle = 'New Run';
+        iconPath = '';
+        splitNames = ['Split 1', 'Split 2', 'Split 3'];
+        resetRun();
+        
+        modal.remove();
+        hideWelcomeScreen();
+        
+        // Open configuration modal to set up the new file
+        openConfig();
+      }
+    };
+    
+    document.getElementById('fbCancelSave').onclick = () => {
+      modal.remove();
+    };
+    
+    // Close on backdrop click
+    modal.onclick = (e) => {
+      if (e.target === modal) {
+        modal.remove();
+      }
+    };
+    
+    // Load initial directory
+    loadDir(currentPath);
+  }
+  
+  function openSplitFile() {
+    // Use Tauri file dialog to open file
+    if (window.__TAURI__?.dialog?.open) {
+      window.__TAURI__.dialog.open({
+        multiple: false,
+        filters: [{
+          name: 'JSON Files',
+          extensions: ['json']
+        }]
+      }).then(filePath => {
+        if (filePath) {
+          console.log('File selected:', filePath);
+          loadSplitFileFromPath(filePath);
+        }
+      }).catch(error => {
+        console.error('File dialog error:', error);
+      });
+    } else {
+      // Fallback - use custom file browser
+      showFileBrowserForOpen();
+    }
+  }
+  
+  function loadSplitFileFromPath(filePath) {
+    if (!filePath) return Promise.reject(new Error('No file path provided'));
+    
+    return loadSaveFile(filePath).then(() => {
+      addRecentFile(filePath);
+      hideWelcomeScreen();
+    }).catch(error => {
+      console.error('Failed to load file:', error);
+      throw error;
+    });
+  }
+  
+  function exitApplication() {
+    if (window.__TAURI__?.process) {
+      // Close Tauri application
+      window.__TAURI__.process.exit(0);
+    } else {
+      // Fallback for browser
+      window.close();
+    }
+  }
+
   function addRecentFile(filePath) {
     if (!filePath) return;
     
@@ -129,8 +512,11 @@
       rowHeight: 36,
       paddingTop: 8,
       paddingBottom: 8,
-      totalTimerFont: 'large',
-      summaryFont: 'normal',
+      splitTableFontSize: 14,
+      totalTimerFontSize: 24,
+      totalTimerBold: false,
+      summaryFontSize: 16,
+      globalFontFamily: 'system-ui',
       showSumBest: true,
       showBestComplete: true
     };
@@ -178,9 +564,11 @@
       total: 1,
       segment: 2,
       diff: 3,
-      bestTotal: 4,
-      bestSegment: 5,
-      bestComplete: 6
+      diffSegment: 4,
+      diffComplete: 5,
+      bestTotal: 6,
+      bestSegment: 7,
+      bestComplete: 8
     };
 
     let cssRules = '';
@@ -227,9 +615,11 @@
       total: 1,
       segment: 2,
       diff: 3,
-      bestTotal: 4,
-      bestSegment: 5,
-      bestComplete: 6
+      diffSegment: 4,
+      diffComplete: 5,
+      bestTotal: 6,
+      bestSegment: 7,
+      bestComplete: 8
     };
 
     // Update header columns
@@ -282,14 +672,53 @@
         table.style.removeProperty('--custom-margin-top');
         table.style.removeProperty('--custom-margin-bottom');
       }
+      
+      // Apply split table font size
+      table.style.setProperty('--split-table-font-size', `${settings.splitTableFontSize}px`);
     }
     
-    // Update font sizes
-    body.className = body.className.replace(/total-timer-\w+/g, '');
-    body.classList.add(`total-timer-${settings.totalTimerFont}`);
+    // Apply font sizes to total timer and summary using direct styles
+    const totalEl = document.getElementById('total-timer');
+    if (totalEl) {
+      totalEl.style.fontSize = `${settings.totalTimerFontSize}px`;
+      totalEl.style.color = `var(--total-timer-digits-color)`;
+      totalEl.style.fontWeight = settings.totalTimerBold ? 'bold' : 'normal';
+    }
     
-    body.className = body.className.replace(/summary-font-\w+/g, '');
-    body.classList.add(`summary-font-${settings.summaryFont}`);
+    // Apply global font family
+    if (settings.globalFontFamily) {
+      let fontStack = '';
+      switch (settings.globalFontFamily) {
+        case 'system-ui':
+          fontStack = 'system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, "Helvetica Neue", Arial';
+          break;
+        case 'Courier New':
+          fontStack = `${settings.globalFontFamily}, "Courier New", Monaco, Consolas, monospace`;
+          break;
+        case 'Georgia':
+          fontStack = `${settings.globalFontFamily}, Georgia, "Times New Roman", serif`;
+          break;
+        default:
+          fontStack = `${settings.globalFontFamily}, sans-serif`;
+      }
+      // Use setProperty with important to override CSS
+      document.documentElement.style.setProperty('font-family', fontStack, 'important');
+      document.body.style.setProperty('font-family', fontStack, 'important');
+      console.log('Applied global font:', settings.globalFontFamily, 'with stack:', fontStack);
+    }
+    
+    const summaryValues = document.querySelectorAll('.summary-value');
+    summaryValues.forEach(el => {
+      // Skip the total timer element as it has its own font size setting
+      if (el.id !== 'total-timer') {
+        el.style.fontSize = `${settings.summaryFontSize}px`;
+      }
+    });
+    
+    // Ensure total timer font size is applied correctly after summary values
+    if (totalEl) {
+      totalEl.style.fontSize = `${settings.totalTimerFontSize}px`;
+    }
     
     // Update summary visibility
     const summaryTable = document.querySelector('.summary-table');
@@ -308,30 +737,6 @@
         bestCompleteRow.style.display = settings.showBestComplete ? '' : 'none';
       }
     }
-  }
-  
-  function renderRecentFiles() {
-    const container = document.getElementById('recent-files-container');
-    if (!container) return;
-    
-    container.innerHTML = '';
-    const recentFiles = getRecentFiles();
-    
-    if (recentFiles.length === 0) return;
-    
-    recentFiles.forEach(filePath => {
-      const fileName = filePath.split('/').pop() || filePath;
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'recent-file-btn';
-      button.textContent = fileName;
-      button.title = filePath; // Show full path on hover
-      button.addEventListener('click', async () => {
-        await loadSaveFile(filePath);
-        closeConfig();
-      });
-      container.appendChild(button);
-    });
   }
   
   async function loadSaveFile(filePath) {
@@ -353,7 +758,11 @@
       }
       if (Array.isArray(data.splitNames) && data.splitNames.length > 0) {
         splitNames = data.splitNames;
-        if (cfgCount) cfgCount.value = String(splitNames.length);
+        splitIcons = data.splitIcons || new Array(data.splitNames.length).fill('');
+        if (cfgCount) {
+          console.log('Setting cfgCount from state load (line 721):', splitNames.length);
+          cfgCount.value = String(splitNames.length);
+        }
         cfgRenderRows(splitNames.length, splitNames);
         // Update arrays to match new split count
         const newLength = splitNames.length;
@@ -364,6 +773,68 @@
         while (bestTotals.length < newLength) bestTotals.push(0);
         while (bestSegments.length < newLength) bestSegments.push(0);
         while (bestCompleteSplits.length < newLength) bestCompleteSplits.push(0);
+        // Ensure splitIcons array matches
+        while (splitIcons.length < newLength) splitIcons.push('');
+      }
+      
+      // Load background color if present
+      if (typeof data.backgroundColor === 'string') {
+        backgroundColor = data.backgroundColor;
+        // Update the configuration form with loaded background color
+        if (document.getElementById('background-color-picker')) document.getElementById('background-color-picker').value = backgroundColor;
+        if (document.getElementById('background-color-hex')) document.getElementById('background-color-hex').value = backgroundColor;
+        // Apply the background color to the app
+        document.documentElement.style.setProperty('--bg', backgroundColor);
+      }
+      
+      // Load additional color settings
+      if (typeof data.runTitleColor === 'string') {
+        runTitleColor = data.runTitleColor;
+        if (document.getElementById('run-title-color-picker')) document.getElementById('run-title-color-picker').value = runTitleColor;
+        if (document.getElementById('run-title-color-hex')) document.getElementById('run-title-color-hex').value = runTitleColor;
+        document.documentElement.style.setProperty('--run-title-color', runTitleColor);
+      }
+      if (typeof data.splitTableColor === 'string') {
+        splitTableColor = data.splitTableColor;
+        if (document.getElementById('split-table-color-picker')) document.getElementById('split-table-color-picker').value = splitTableColor;
+        if (document.getElementById('split-table-color-hex')) document.getElementById('split-table-color-hex').value = splitTableColor;
+        document.documentElement.style.setProperty('--split-table-color', splitTableColor);
+      }
+      if (typeof data.totalTimerTextColor === 'string') {
+        totalTimerTextColor = data.totalTimerTextColor;
+        if (document.getElementById('total-timer-text-color-picker')) document.getElementById('total-timer-text-color-picker').value = totalTimerTextColor;
+        if (document.getElementById('total-timer-text-color-hex')) document.getElementById('total-timer-text-color-hex').value = totalTimerTextColor;
+        document.documentElement.style.setProperty('--total-timer-text-color', totalTimerTextColor);
+      }
+      if (typeof data.totalTimerDigitsColor === 'string') {
+        totalTimerDigitsColor = data.totalTimerDigitsColor;
+        if (document.getElementById('total-timer-digits-color-picker')) document.getElementById('total-timer-digits-color-picker').value = totalTimerDigitsColor;
+        if (document.getElementById('total-timer-digits-color-hex')) document.getElementById('total-timer-digits-color-hex').value = totalTimerDigitsColor;
+        document.documentElement.style.setProperty('--total-timer-digits-color', totalTimerDigitsColor);
+      }
+      if (typeof data.sumBestSegmentsColor === 'string') {
+        sumBestSegmentsColor = data.sumBestSegmentsColor;
+        if (document.getElementById('sum-best-segments-color-picker')) document.getElementById('sum-best-segments-color-picker').value = sumBestSegmentsColor;
+        if (document.getElementById('sum-best-segments-color-hex')) document.getElementById('sum-best-segments-color-hex').value = sumBestSegmentsColor;
+        document.documentElement.style.setProperty('--sum-best-segments-color', sumBestSegmentsColor);
+      }
+      if (typeof data.bestCompleteRunColor === 'string') {
+        bestCompleteRunColor = data.bestCompleteRunColor;
+        if (document.getElementById('best-complete-run-color-picker')) document.getElementById('best-complete-run-color-picker').value = bestCompleteRunColor;
+        if (document.getElementById('best-complete-run-color-hex')) document.getElementById('best-complete-run-color-hex').value = bestCompleteRunColor;
+        document.documentElement.style.setProperty('--best-complete-run-color', bestCompleteRunColor);
+      }
+      if (typeof data.splitBg1Color === 'string') {
+        splitBg1Color = data.splitBg1Color;
+        if (document.getElementById('split-bg-1-color-picker')) document.getElementById('split-bg-1-color-picker').value = splitBg1Color;
+        if (document.getElementById('split-bg-1-color-hex')) document.getElementById('split-bg-1-color-hex').value = splitBg1Color;
+        document.documentElement.style.setProperty('--split-bg-1', splitBg1Color);
+      }
+      if (typeof data.splitBg2Color === 'string') {
+        splitBg2Color = data.splitBg2Color;
+        if (document.getElementById('split-bg-2-color-picker')) document.getElementById('split-bg-2-color-picker').value = splitBg2Color;
+        if (document.getElementById('split-bg-2-color-hex')) document.getElementById('split-bg-2-color-hex').value = splitBg2Color;
+        document.documentElement.style.setProperty('--split-bg-2', splitBg2Color);
       }
       
       // Load column widths if present
@@ -374,6 +845,8 @@
         if (document.getElementById('col-total-width')) document.getElementById('col-total-width').value = widths.total || 100;
         if (document.getElementById('col-segment-width')) document.getElementById('col-segment-width').value = widths.segment || 100;
         if (document.getElementById('col-diff-width')) document.getElementById('col-diff-width').value = widths.diff || 80;
+        if (document.getElementById('col-diff-segment-width')) document.getElementById('col-diff-segment-width').value = widths.diffSegment || 80;
+        if (document.getElementById('col-diff-complete-width')) document.getElementById('col-diff-complete-width').value = widths.diffComplete || 80;
         if (document.getElementById('col-best-total-width')) document.getElementById('col-best-total-width').value = widths.bestTotal || 100;
         if (document.getElementById('col-best-segment-width')) document.getElementById('col-best-segment-width').value = widths.bestSegment || 100;
         if (document.getElementById('col-best-complete-width')) document.getElementById('col-best-complete-width').value = widths.bestComplete || 100;
@@ -393,16 +866,61 @@
         if (document.getElementById('row-height-value')) document.getElementById('row-height-value').value = settings.rowHeight || 36;
         if (document.getElementById('row-padding-top')) document.getElementById('row-padding-top').value = settings.paddingTop ?? 8;
         if (document.getElementById('row-padding-bottom')) document.getElementById('row-padding-bottom').value = settings.paddingBottom ?? 8;
-        if (document.getElementById('total-timer-font')) document.getElementById('total-timer-font').value = settings.totalTimerFont || 'large';
-        if (document.getElementById('summary-font')) document.getElementById('summary-font').value = settings.summaryFont || 'normal';
+        
+        // Handle both old text-based and new numerical font sizes
+        if (document.getElementById('split-table-font-size')) {
+          document.getElementById('split-table-font-size').value = settings.splitTableFontSize || 14;
+        }
+        if (document.getElementById('total-timer-font-size')) {
+          // Convert old text-based font sizes to numerical values for backward compatibility
+          let totalTimerSize = settings.totalTimerFontSize || 24;
+          if (typeof settings.totalTimerFont === 'string') {
+            const fontSizeMap = { 'small': 16, 'normal': 20, 'large': 24, 'extra-large': 32 };
+            totalTimerSize = fontSizeMap[settings.totalTimerFont] || 24;
+          }
+          document.getElementById('total-timer-font-size').value = totalTimerSize;
+        }
+        if (document.getElementById('summary-font-size')) {
+          // Convert old text-based font sizes to numerical values for backward compatibility
+          let summarySize = settings.summaryFontSize || 16;
+          if (typeof settings.summaryFont === 'string') {
+            const fontSizeMap = { 'small': 12, 'normal': 16, 'large': 20, 'extra-large': 24 };
+            summarySize = fontSizeMap[settings.summaryFont] || 16;
+          }
+          document.getElementById('summary-font-size').value = summarySize;
+        }
+        
+        // Handle background color
+        if (document.getElementById('background-color-picker') && document.getElementById('background-color-hex')) {
+          document.getElementById('background-color-picker').value = backgroundColor;
+          document.getElementById('background-color-hex').value = backgroundColor;
+        }
+        
         if (document.getElementById('show-sum-best')) document.getElementById('show-sum-best').checked = settings.showSumBest ?? true;
         if (document.getElementById('show-best-complete')) document.getElementById('show-best-complete').checked = settings.showBestComplete ?? true;
         
-        // Save the loaded display settings to the current state
-        saveDisplaySettings(settings);
+        // Load new font settings
+        if (document.getElementById('total-timer-bold')) document.getElementById('total-timer-bold').checked = settings.totalTimerBold || false;
+        if (document.getElementById('global-font-family')) document.getElementById('global-font-family').value = settings.globalFontFamily || 'system-ui';
+        
+        // Create normalized settings object for saving
+        const normalizedSettings = {
+          ...settings,
+          splitTableFontSize: settings.splitTableFontSize || 14,
+          totalTimerFontSize: settings.totalTimerFontSize || (typeof settings.totalTimerFont === 'string' ? 
+            { 'small': 16, 'normal': 20, 'large': 24, 'extra-large': 32 }[settings.totalTimerFont] || 24 : 24),
+          totalTimerBold: settings.totalTimerBold || false,
+          summaryFontSize: settings.summaryFontSize || (typeof settings.summaryFont === 'string' ? 
+            { 'small': 12, 'normal': 16, 'large': 20, 'extra-large': 24 }[settings.summaryFont] || 16 : 16),
+          globalFontFamily: settings.globalFontFamily || 'system-ui'
+        };
+        
+        // Save the normalized display settings to the current state
+        saveDisplaySettings(normalizedSettings);
         
         // Apply the display settings immediately
         updateDisplaySettings();
+        document.documentElement.style.setProperty('--bg', backgroundColor);
       }
       
       // Save the file path and add to recent files
@@ -482,8 +1000,35 @@
   const cfgSplitsTbody = document.getElementById('cfg-splits');
   const cfgCancel = document.getElementById('cfg-cancel');
   const cfgResetStorage = document.getElementById('cfg-reset-storage');
-  const cfgChooseSave = document.getElementById('cfg-choose-save');
-  const cfgClearSave = document.getElementById('cfg-clear-save');
+  
+  // Configuration tab functionality
+  const configTabs = document.querySelectorAll('.config-tab');
+  const configTabContents = document.querySelectorAll('.config-tab-content');
+  
+  // Tab switching function
+  function switchConfigTab(targetTab) {
+    // Remove active class from all tabs and content
+    configTabs.forEach(tab => tab.classList.remove('active'));
+    configTabContents.forEach(content => content.classList.remove('active'));
+    
+    // Add active class to clicked tab and corresponding content
+    const activeTab = document.querySelector(`.config-tab[data-tab="${targetTab}"]`);
+    const activeContent = document.querySelector(`.config-tab-content[data-tab="${targetTab}"]`);
+    
+    if (activeTab && activeContent) {
+      activeTab.classList.add('active');
+      activeContent.classList.add('active');
+    }
+  }
+  
+  // Add click listeners to tabs
+  configTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const targetTab = tab.getAttribute('data-tab');
+      switchConfigTab(targetTab);
+    });
+  });
+  
   // In-app file picker elements
   const fpBackdrop = document.getElementById('file-backdrop');
   const fpPath = document.getElementById('fp-path');
@@ -623,21 +1168,46 @@
     saveGlobalSettings(globalSettings);
   }
 
-  function cfgRenderRows(n, names = []) {
+  // Convert icon path to displayable format (base64 for file paths, direct for relative paths)
+  async function getIconDisplaySrc(iconPath) {
+    if (!iconPath || iconPath.startsWith('spliticons/')) {
+      // Default or relative path icons - use as-is
+      return iconPath || 'spliticons/s_icon.png';
+    }
+    
+    // Absolute path - convert to base64
+    try {
+      return await window.__TAURI__.core.invoke('read_image_as_base64', { path: iconPath });
+    } catch (error) {
+      console.log('Failed to load custom icon:', iconPath);
+      return 'spliticons/s_icon.png'; // Fallback to default
+    }
+  }
+
+  async function cfgRenderRows(n, names = []) {
     cfgSplitsTbody.innerHTML = '';
     for (let i = 0; i < n; i++) {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${i + 1}</td><td><input type="text" value="${names[i] || `Split ${i+1}`}" /></td>`;
+      
+      // Build icon display for split configuration (clickable) with placeholder
+      tr.innerHTML = `<td>${i + 1}</td><td><img src="spliticons/s_icon.png" class="split-icon" onclick="openIconSelector(${i})" alt="Split icon" title="Click to change icon"></td><td><input type="text" name="split-${i}" value="${names[i] || `Split ${i+1}`}" /></td>`;
       cfgSplitsTbody.appendChild(tr);
+      
+      // Load actual icon asynchronously
+      (async () => {
+        const iconSrc = await getIconDisplaySrc(splitIcons[i]);
+        const iconImg = tr.querySelector('.split-icon');
+        if (iconImg) iconImg.src = iconSrc;
+      })();
     }
   }
   function openConfig() {
     cfgTitle.value = runTitle;
     cfgIconPath.value = iconPath;
     updateIconDisplay(); // Update icon preview in config
+    console.log('Setting cfgCount from openConfig:', splitNames.length);
     cfgCount.value = String(splitNames.length);
     cfgRenderRows(splitNames.length, splitNames);
-    renderRecentFiles(); // Render recent files buttons
     
     // Load column visibility settings
     const visibility = getColumnVisibility();
@@ -645,6 +1215,8 @@
     document.getElementById('col-total').checked = visibility.total;
     document.getElementById('col-segment').checked = visibility.segment;
     document.getElementById('col-diff').checked = visibility.diff;
+    document.getElementById('col-diff-segment').checked = visibility.diffSegment;
+    document.getElementById('col-diff-complete').checked = visibility.diffComplete;
     document.getElementById('col-best-total').checked = visibility.bestTotal;
     document.getElementById('col-best-segment').checked = visibility.bestSegment;
     document.getElementById('col-best-complete').checked = visibility.bestComplete;
@@ -662,8 +1234,31 @@
     document.getElementById('row-height-value').value = displaySettings.rowHeight;
     document.getElementById('row-padding-top').value = displaySettings.paddingTop;
     document.getElementById('row-padding-bottom').value = displaySettings.paddingBottom;
-    document.getElementById('total-timer-font').value = displaySettings.totalTimerFont;
-    document.getElementById('summary-font').value = displaySettings.summaryFont;
+    document.getElementById('split-table-font-size').value = displaySettings.splitTableFontSize;
+    document.getElementById('total-timer-font-size').value = displaySettings.totalTimerFontSize;
+    document.getElementById('total-timer-bold').checked = displaySettings.totalTimerBold;
+    document.getElementById('summary-font-size').value = displaySettings.summaryFontSize;
+    document.getElementById('global-font-family').value = displaySettings.globalFontFamily;
+    document.getElementById('background-color-picker').value = backgroundColor;
+    document.getElementById('background-color-hex').value = backgroundColor;
+    
+    // Populate new color picker fields
+    document.getElementById('run-title-color-picker').value = runTitleColor;
+    document.getElementById('run-title-color-hex').value = runTitleColor;
+    document.getElementById('split-table-color-picker').value = splitTableColor;
+    document.getElementById('split-table-color-hex').value = splitTableColor;
+    document.getElementById('total-timer-text-color-picker').value = totalTimerTextColor;
+    document.getElementById('total-timer-text-color-hex').value = totalTimerTextColor;
+    document.getElementById('total-timer-digits-color-picker').value = totalTimerDigitsColor;
+    document.getElementById('total-timer-digits-color-hex').value = totalTimerDigitsColor;
+    document.getElementById('sum-best-segments-color-picker').value = sumBestSegmentsColor;
+    document.getElementById('sum-best-segments-color-hex').value = sumBestSegmentsColor;
+    document.getElementById('best-complete-run-color-picker').value = bestCompleteRunColor;
+    document.getElementById('best-complete-run-color-hex').value = bestCompleteRunColor;
+    document.getElementById('split-bg-1-color-picker').value = splitBg1Color;
+    document.getElementById('split-bg-1-color-hex').value = splitBg1Color;
+    document.getElementById('split-bg-2-color-picker').value = splitBg2Color;
+    document.getElementById('split-bg-2-color-hex').value = splitBg2Color;
     document.getElementById('show-sum-best').checked = displaySettings.showSumBest;
     document.getElementById('show-best-complete').checked = displaySettings.showBestComplete;
     
@@ -675,10 +1270,30 @@
   const clampCount = (v) => Math.max(1, Math.min(50, Number(v) || 1));
   cfgCount?.addEventListener('input', () => {
     const n = clampCount(cfgCount.value);
+    console.log('Setting cfgCount from input event:', n);
     cfgCount.value = String(n);
     // If row count mismatches, re-render rows
     if (cfgSplitsTbody.querySelectorAll('input').length !== n) {
-      cfgRenderRows(n);
+      // Gather current split names from input fields to preserve them
+      const currentNames = Array.from(cfgSplitsTbody.querySelectorAll('input')).map(input => input.value);
+      cfgRenderRows(n, currentNames);
+      
+      // Update splitNames array to match the new count immediately
+      // This ensures splitNames.length matches the UI count for icon selection
+      while (splitNames.length < n) {
+        splitNames.push(`Split ${splitNames.length + 1}`);
+      }
+      if (splitNames.length > n) {
+        splitNames = splitNames.slice(0, n);
+      }
+      
+      // Also ensure splitIcons array matches
+      while (splitIcons.length < n) {
+        splitIcons.push('');
+      }
+      if (splitIcons.length > n) {
+        splitIcons = splitIcons.slice(0, n);
+      }
     }
   });
   cfgForm?.addEventListener('submit', (e) => {
@@ -708,6 +1323,9 @@
       while (bestSegments.length < splitNames.length) bestSegments.push(0);
       bestCompleteSplits = (bestCompleteSplits || []).slice(0, splitNames.length);
       while (bestCompleteSplits.length < splitNames.length) bestCompleteSplits.push(0);
+      // Resize splitIcons array to match split count
+      splitIcons = (splitIcons || []).slice(0, splitNames.length);
+      while (splitIcons.length < splitNames.length) splitIcons.push('');
       // Resize state arrays, preserving existing elapsed where possible
       segmentElapsed = (segmentElapsed || []).slice(0, splitNames.length);
       while (segmentElapsed.length < splitNames.length) segmentElapsed.push(0);
@@ -719,6 +1337,8 @@
         total: document.getElementById('col-total').checked,
         segment: document.getElementById('col-segment').checked,
         diff: document.getElementById('col-diff').checked,
+        diffSegment: document.getElementById('col-diff-segment').checked,
+        diffComplete: document.getElementById('col-diff-complete').checked,
         bestTotal: document.getElementById('col-best-total').checked,
         bestSegment: document.getElementById('col-best-segment').checked,
         bestComplete: document.getElementById('col-best-complete').checked
@@ -731,6 +1351,8 @@
         total: parseInt(document.getElementById('col-total-width').value) || 100,
         segment: parseInt(document.getElementById('col-segment-width').value) || 100,
         diff: parseInt(document.getElementById('col-diff-width').value) || 80,
+        diffSegment: parseInt(document.getElementById('col-diff-segment-width').value) || 80,
+        diffComplete: parseInt(document.getElementById('col-diff-complete-width').value) || 80,
         bestTotal: parseInt(document.getElementById('col-best-total-width').value) || 100,
         bestSegment: parseInt(document.getElementById('col-best-segment-width').value) || 100,
         bestComplete: parseInt(document.getElementById('col-best-complete-width').value) || 100
@@ -743,8 +1365,18 @@
         rowHeight: parseInt(document.getElementById('row-height-value').value) || 36,
         paddingTop: parseInt(document.getElementById('row-padding-top').value) ?? 8,
         paddingBottom: parseInt(document.getElementById('row-padding-bottom').value) ?? 8,
-        totalTimerFont: document.getElementById('total-timer-font').value,
-        summaryFont: document.getElementById('summary-font').value,
+        splitTableFontSize: parseInt(document.getElementById('split-table-font-size').value) || 14,
+        totalTimerFontSize: parseInt(document.getElementById('total-timer-font-size').value) || 24,
+        summaryFontSize: parseInt(document.getElementById('summary-font-size').value) || 16,
+        backgroundColor: document.getElementById('background-color-hex').value || '#0e0f13',
+        runTitleColor: document.getElementById('run-title-color-hex').value || '#c9d1d9',
+        splitTableColor: document.getElementById('split-table-color-hex').value || '#c9d1d9',
+        totalTimerTextColor: document.getElementById('total-timer-text-color-hex').value || '#8b9bb4',
+        totalTimerDigitsColor: document.getElementById('total-timer-digits-color-hex').value || '#c9d1d9',
+        sumBestSegmentsColor: document.getElementById('sum-best-segments-color-hex').value || '#c9d1d9',
+        bestCompleteRunColor: document.getElementById('best-complete-run-color-hex').value || '#c9d1d9',
+        splitBg1Color: document.getElementById('split-bg-1-color-hex').value || '#0000000a',
+        splitBg2Color: document.getElementById('split-bg-2-color-hex').value || '#00000015',
         showSumBest: document.getElementById('show-sum-best').checked,
         showBestComplete: document.getElementById('show-best-complete').checked
       };
@@ -754,12 +1386,19 @@
       const currentWidths = getColumnWidths();
       
       // Persist settings immediately
-      saveState({ runTitle, iconPath, splitNames, bestTotals, bestSegments, bestCompleteSplits, columnWidths: currentWidths });
+      saveState({ runTitle, iconPath, splitNames, splitIcons, bestTotals, bestSegments, bestCompleteSplits, columnWidths: currentWidths, backgroundColor, runTitleColor, splitTableColor, totalTimerTextColor, totalTimerDigitsColor, sumBestSegmentsColor, bestCompleteRunColor, splitBg1Color, splitBg2Color });
       // Reset and re-render (silent)
       doReset();
       renderRows();
       updateColumnVisibility(); // Apply column visibility after rendering
       updateDisplaySettings(); // Apply display settings after rendering
+      document.documentElement.style.setProperty('--bg', backgroundColor); // Apply background color
+      document.documentElement.style.setProperty('--run-title-color', runTitleColor);
+      document.documentElement.style.setProperty('--split-table-color', splitTableColor);
+      document.documentElement.style.setProperty('--total-timer-text-color', totalTimerTextColor);
+      document.documentElement.style.setProperty('--total-timer-digits-color', totalTimerDigitsColor);
+      document.documentElement.style.setProperty('--split-bg-1', splitBg1Color);
+      document.documentElement.style.setProperty('--split-bg-2', splitBg2Color);
     } finally {
       closeConfig();
     }
@@ -886,6 +1525,16 @@
               runTitle: "Run Title",
               iconPath: "",
               splitNames: ["Split 1", "Split 2", "Split 3"],
+              splitIcons: ["", "", ""],
+              backgroundColor: "#2c3e50",
+              runTitleColor: "#ecf0f1",
+              splitTableColor: "#ecf0f1",
+              totalTimerTextColor: "#ecf0f1",
+              totalTimerDigitsColor: "#e74c3c",
+              sumBestSegmentsColor: "#e74c3c",
+              bestCompleteRunColor: "#e74c3c",
+              splitBg1Color: "#34495e",
+              splitBg2Color: "#2c3e50",
               bestTotals: [],
               bestSegments: [],
               bestCompleteSplits: []
@@ -924,7 +1573,10 @@
             }
             if (Array.isArray(data.splitNames) && data.splitNames.length > 0) {
               splitNames = [...data.splitNames];
-              if (cfgCount) cfgCount.value = String(splitNames.length);
+              if (cfgCount) {
+                console.log('Setting cfgCount from file load:', splitNames.length);
+                cfgCount.value = String(splitNames.length);
+              }
               // Update split name inputs if config is open
               if (cfgSplitsTbody) {
                 cfgRenderRows(splitNames.length, splitNames);
@@ -1105,30 +1757,116 @@
     });
   }
 
-  // Config: choose / clear save file
-  cfgChooseSave?.addEventListener('click', async () => {
-    console.log('Choose Save File clicked');
+  // File browser for opening split files
+  async function showFileBrowserForOpen() {
+    const modal = document.createElement('div');
+    modal.className = 'file-browser-modal';
+    modal.innerHTML = `
+      <div class="file-browser-content">
+        <div class="file-browser-header">
+          <h3>Open Split File</h3>
+          <button class="close-btn" onclick="this.closest('.file-browser-modal').remove()">×</button>
+        </div>
+        <div class="file-browser-path">
+          <button id="fbHomeOpen">🏠</button>
+          <button id="fbUpOpen">⬆️</button>
+          <span id="fbPathOpen">/</span>
+        </div>
+        <div class="file-browser-list" id="fbListOpen">
+          Loading...
+        </div>
+        <div class="file-browser-input">
+          <input type="text" id="fbFilenameOpen" placeholder="splits.json">
+          <button id="fbOpenFile">Open</button>
+          <button id="fbCancelOpen">Cancel</button>
+        </div>
+      </div>
+    `;
     
+    document.body.appendChild(modal);
+    
+    let currentPath = '/';
+    
+    // Initialize with home directory
     try {
-      // Show file browser modal using working backend
-      await fpShow();
+      currentPath = await window.__TAURI__.core.invoke('home_dir');
     } catch (error) {
-      console.error('Failed to open file browser:', error);
-      // Fallback: prompt for file path
-      const currentPath = loadSavePath() || '/home/user/splits.json';
-      const newPath = prompt('Enter the full path where you want to save splits:', currentPath);
-      if (newPath && newPath.trim()) {
-        saveSavePath(newPath.trim());
-        addRecentFile(newPath.trim());
-        console.log('Save path set to:', newPath.trim());
+      console.error('Failed to get home directory:', error);
+      currentPath = '/';
+    }
+    
+    // Load directory function
+    async function loadDir(path) {
+      try {
+        const result = await window.__TAURI__.core.invoke('list_dir', { path });
+        const listEl = document.getElementById('fbListOpen');
+        const pathEl = document.getElementById('fbPathOpen');
+        
+        pathEl.textContent = path;
+        currentPath = path;
+        
+        listEl.innerHTML = '';
+        
+        // Sort: directories first, then files
+        result.sort((a, b) => {
+          if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        });
+        
+        result.forEach(item => {
+          const el = document.createElement('div');
+          el.className = 'file-browser-item';
+          el.innerHTML = `${item.is_dir ? '📁' : '📄'} ${item.name}`;
+          el.onclick = () => {
+            if (item.is_dir) {
+              const newPath = path.endsWith('/') ? path + item.name : path + '/' + item.name;
+              loadDir(newPath);
+            } else {
+              document.getElementById('fbFilenameOpen').value = item.name;
+            }
+          };
+          listEl.appendChild(el);
+        });
+      } catch (error) {
+        console.error('Failed to read directory:', error);
+        document.getElementById('fbListOpen').innerHTML = 'Failed to load directory';
       }
     }
-  });
-  // Config: clear save file
-  cfgClearSave?.addEventListener('click', () => { 
-    saveSavePath(''); 
-    renderRecentFiles(); // Update recent files display
-  });
+    
+    // Event handlers
+    document.getElementById('fbHomeOpen').onclick = () => loadDir('/');
+    document.getElementById('fbUpOpen').onclick = () => {
+      const parts = currentPath.split('/').filter(p => p);
+      if (parts.length > 0) {
+        parts.pop();
+        loadDir('/' + parts.join('/'));
+      }
+    };
+    
+    document.getElementById('fbOpenFile').onclick = () => {
+      const filename = document.getElementById('fbFilenameOpen').value.trim();
+      if (filename) {
+        const fullPath = currentPath.endsWith('/') ? currentPath + filename : currentPath + '/' + filename;
+        console.log('Opening file:', fullPath);
+        modal.remove();
+        loadSplitFileFromPath(fullPath);
+      }
+    };
+    
+    document.getElementById('fbCancelOpen').onclick = () => {
+      modal.remove();
+    };
+    
+    // Close on backdrop click
+    modal.onclick = (e) => {
+      if (e.target === modal) {
+        modal.remove();
+      }
+    };
+    
+    // Load initial directory
+    loadDir('/');
+  }
 
   // Config: choose / clear icon file
   cfgChooseIcon?.addEventListener('click', async () => {
@@ -1204,16 +1942,41 @@
         
         // Try to create the file if it doesn't exist
         try {
+          console.log('=== FILE SAVE DEBUG ===');
+          console.log('runTitle:', runTitle);
+          console.log('iconPath:', iconPath);
+          console.log('splitNames:', splitNames);
+          console.log('splitIcons variable:', splitIcons);
+          console.log('splitIcons type:', typeof splitIcons);
+          console.log('splitIcons length:', splitIcons?.length);
+          console.log('splitIcons array:', JSON.stringify(splitIcons));
+          
+          const saveData = {
+            runTitle: runTitle || 'Run Title',
+            iconPath: iconPath || '',
+            splitNames: splitNames || ['Split 1'],
+            splitIcons: splitIcons || [''],
+            bestTotals: bestTotals || [0],
+            bestSegments: bestSegments || [0],
+            bestCompleteSplits: bestCompleteSplits || [0],
+            backgroundColor: backgroundColor || '#0e0f13',
+            runTitleColor: runTitleColor || '#c9d1d9',
+            splitTableColor: splitTableColor || '#c9d1d9',
+            totalTimerTextColor: totalTimerTextColor || '#8b9bb4',
+            totalTimerDigitsColor: totalTimerDigitsColor || '#c9d1d9',
+            sumBestSegmentsColor: sumBestSegmentsColor || '#c9d1d9',
+            bestCompleteRunColor: bestCompleteRunColor || '#c9d1d9',
+            splitBg1Color: splitBg1Color || '#0000000a',
+            splitBg2Color: splitBg2Color || '#00000015'
+          };
+          console.log('=== COMPLETE SAVE DATA ===');
+          console.log('saveData:', saveData);
+          console.log('saveData.splitIcons:', saveData.splitIcons);
+          console.log('JSON stringified:', JSON.stringify(saveData, null, 2));
+          
           await fpInvoke('write_text_file', { 
             path: fullPath, 
-            content: JSON.stringify({
-              runTitle: runTitle || 'Run Title',
-              iconPath: iconPath || '',
-              splitNames: splitNames || ['Split 1'],
-              bestTotals: bestTotals || [0],
-              bestSegments: bestSegments || [0],
-              bestCompleteSplits: bestCompleteSplits || [0]
-            }, null, 2)
+            contents: JSON.stringify(saveData, null, 2)
           });
         } catch (writeError) {
           console.warn('Could not create file, it may already exist:', writeError);
@@ -1240,7 +2003,7 @@
   });
   
   // Real-time configuration updates
-  const columnCheckboxes = ['col-split', 'col-total', 'col-segment', 'col-diff', 'col-best-total', 'col-best-segment', 'col-best-complete'];
+  const columnCheckboxes = ['col-split', 'col-total', 'col-segment', 'col-diff', 'col-diff-segment', 'col-diff-complete', 'col-best-total', 'col-best-segment', 'col-best-complete'];
   columnCheckboxes.forEach(id => {
     const checkbox = document.getElementById(id);
     checkbox?.addEventListener('change', () => {
@@ -1250,7 +2013,7 @@
   
   // Column width inputs
   const columnWidthInputs = [
-    'col-split-width', 'col-total-width', 'col-segment-width', 'col-diff-width',
+    'col-split-width', 'col-total-width', 'col-segment-width', 'col-diff-width', 'col-diff-segment-width', 'col-diff-complete-width',
     'col-best-total-width', 'col-best-segment-width', 'col-best-complete-width'
   ];
   columnWidthInputs.forEach(id => {
@@ -1263,8 +2026,8 @@
   // Display setting controls
   const displayControls = [
     'row-height-preset', 'row-height-value', 'row-padding-top', 'row-padding-bottom',
-    'row-margin-top', 'row-margin-bottom', 'total-timer-font', 'summary-font', 
-    'show-sum-best', 'show-best-complete'
+    'row-margin-top', 'row-margin-bottom', 'split-table-font-size', 'total-timer-font-size', 'total-timer-bold', 'summary-font-size', 'global-font-family',
+    'background-color-picker', 'background-color-hex', 'show-sum-best', 'show-best-complete'
   ];
   displayControls.forEach(id => {
     const control = document.getElementById(id);
@@ -1303,6 +2066,99 @@
     updateConfigurationLive();
   });
   
+  // Background color sync functionality
+  const backgroundColorPicker = document.getElementById('background-color-picker');
+  const backgroundColorHex = document.getElementById('background-color-hex');
+  
+  // Sync color picker to hex input
+  backgroundColorPicker?.addEventListener('input', () => {
+    const color = backgroundColorPicker.value;
+    if (backgroundColorHex) {
+      backgroundColorHex.value = color;
+    }
+    updateConfigurationLive();
+  });
+  
+  // Sync hex input to color picker (with validation)
+  backgroundColorHex?.addEventListener('input', () => {
+    const hex = backgroundColorHex.value;
+    // Validate color format
+    if (isValidColor(hex)) {
+      // Only update color picker if it's a valid hex color
+      if (/^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$/.test(hex) && backgroundColorPicker) {
+        backgroundColorPicker.value = hex.slice(0, 7);
+      }
+      updateConfigurationLive();
+    }
+  });
+  
+  // Also sync on blur to handle partial inputs
+  backgroundColorHex?.addEventListener('blur', () => {
+    const hex = backgroundColorHex.value;
+    if (!isValidColor(hex)) {
+      // Reset to current picker value if invalid
+      if (backgroundColorPicker) {
+        backgroundColorHex.value = backgroundColorPicker.value;
+      }
+    }
+  });
+  
+  // Add event handlers for all the new color pickers
+  function isValidColor(color) {
+    // Support hex colors (6 or 8 digits), CSS color names, and special values
+    if (!color) return false;
+    if (color === 'transparent') return true;
+    if (/^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$/.test(color)) return true;
+    
+    // Test if it's a valid CSS color by creating a temporary element
+    const testEl = document.createElement('div');
+    testEl.style.color = color;
+    return testEl.style.color !== '';
+  }
+  
+  function setupColorPicker(pickerId, hexId) {
+    const picker = document.getElementById(pickerId);
+    const hex = document.getElementById(hexId);
+    
+    picker?.addEventListener('input', () => {
+      const color = picker.value;
+      if (hex) {
+        hex.value = color;
+      }
+      updateConfigurationLive();
+    });
+    
+    hex?.addEventListener('input', () => {
+      const hexValue = hex.value;
+      if (isValidColor(hexValue)) {
+        // Only update color picker if it's a valid hex color (not transparent/keywords)
+        if (/^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$/.test(hexValue) && picker) {
+          picker.value = hexValue.slice(0, 7); // Color input only supports 6-digit hex
+        }
+        updateConfigurationLive();
+      }
+    });
+    
+    hex?.addEventListener('blur', () => {
+      const hexValue = hex.value;
+      if (!isValidColor(hexValue)) {
+        if (picker) {
+          hex.value = picker.value;
+        }
+      }
+    });
+  }
+  
+  // Setup all new color pickers
+  setupColorPicker('run-title-color-picker', 'run-title-color-hex');
+  setupColorPicker('split-table-color-picker', 'split-table-color-hex');
+  setupColorPicker('total-timer-text-color-picker', 'total-timer-text-color-hex');
+  setupColorPicker('total-timer-digits-color-picker', 'total-timer-digits-color-hex');
+  setupColorPicker('sum-best-segments-color-picker', 'sum-best-segments-color-hex');
+  setupColorPicker('best-complete-run-color-picker', 'best-complete-run-color-hex');
+  setupColorPicker('split-bg-1-color-picker', 'split-bg-1-color-hex');
+  setupColorPicker('split-bg-2-color-picker', 'split-bg-2-color-hex');
+  
   function updateConfigurationLive() {
     // Update column visibility
     const visibility = {
@@ -1310,6 +2166,8 @@
       total: document.getElementById('col-total').checked,
       segment: document.getElementById('col-segment').checked,
       diff: document.getElementById('col-diff').checked,
+      diffSegment: document.getElementById('col-diff-segment').checked,
+      diffComplete: document.getElementById('col-diff-complete').checked,
       bestTotal: document.getElementById('col-best-total').checked,
       bestSegment: document.getElementById('col-best-segment').checked,
       bestComplete: document.getElementById('col-best-complete').checked
@@ -1322,6 +2180,8 @@
       total: parseInt(document.getElementById('col-total-width')?.value) || 100,
       segment: parseInt(document.getElementById('col-segment-width')?.value) || 100,
       diff: parseInt(document.getElementById('col-diff-width')?.value) || 80,
+      diffSegment: parseInt(document.getElementById('col-diff-segment-width')?.value) || 80,
+      diffComplete: parseInt(document.getElementById('col-diff-complete-width')?.value) || 80,
       bestTotal: parseInt(document.getElementById('col-best-total-width')?.value) || 100,
       bestSegment: parseInt(document.getElementById('col-best-segment-width')?.value) || 100,
       bestComplete: parseInt(document.getElementById('col-best-complete-width')?.value) || 100
@@ -1334,12 +2194,44 @@
       rowHeight: parseInt(document.getElementById('row-height-value')?.value) || 36,
       paddingTop: parseInt(document.getElementById('row-padding-top')?.value) ?? 8,
       paddingBottom: parseInt(document.getElementById('row-padding-bottom')?.value) ?? 8,
-      totalTimerFont: document.getElementById('total-timer-font')?.value || 'large',
-      summaryFont: document.getElementById('summary-font')?.value || 'normal',
+      splitTableFontSize: parseInt(document.getElementById('split-table-font-size')?.value) || 14,
+      totalTimerFontSize: parseInt(document.getElementById('total-timer-font-size')?.value) || 24,
+      totalTimerBold: document.getElementById('total-timer-bold')?.checked || false,
+      summaryFontSize: parseInt(document.getElementById('summary-font-size')?.value) || 16,
+      globalFontFamily: document.getElementById('global-font-family')?.value || 'system-ui',
       showSumBest: document.getElementById('show-sum-best')?.checked ?? true,
       showBestComplete: document.getElementById('show-best-complete')?.checked ?? true
     };
     saveDisplaySettings(displaySettings);
+    
+    // Update background color (saved in split file data, not global settings)
+    backgroundColor = document.getElementById('background-color-hex')?.value || '#0e0f13';
+    document.documentElement.style.setProperty('--bg', backgroundColor);
+    
+    // Update new color settings
+    runTitleColor = document.getElementById('run-title-color-hex')?.value || '#c9d1d9';
+    document.documentElement.style.setProperty('--run-title-color', runTitleColor);
+    
+    splitTableColor = document.getElementById('split-table-color-hex')?.value || '#c9d1d9';
+    document.documentElement.style.setProperty('--split-table-color', splitTableColor);
+    
+    totalTimerTextColor = document.getElementById('total-timer-text-color-hex')?.value || '#8b9bb4';
+    document.documentElement.style.setProperty('--total-timer-text-color', totalTimerTextColor);
+    
+    totalTimerDigitsColor = document.getElementById('total-timer-digits-color-hex')?.value || '#c9d1d9';
+    document.documentElement.style.setProperty('--total-timer-digits-color', totalTimerDigitsColor);
+    
+    sumBestSegmentsColor = document.getElementById('sum-best-segments-color-hex')?.value || '#c9d1d9';
+    document.documentElement.style.setProperty('--sum-best-segments-color', sumBestSegmentsColor);
+    
+    bestCompleteRunColor = document.getElementById('best-complete-run-color-hex')?.value || '#c9d1d9';
+    document.documentElement.style.setProperty('--best-complete-run-color', bestCompleteRunColor);
+    
+    splitBg1Color = document.getElementById('split-bg-1-color-hex')?.value || '#0000000a';
+    document.documentElement.style.setProperty('--split-bg-1', splitBg1Color);
+    
+    splitBg2Color = document.getElementById('split-bg-2-color-hex')?.value || '#00000015';
+    document.documentElement.style.setProperty('--split-bg-2', splitBg2Color);
     
     // Apply changes immediately
     updateColumnVisibility();
@@ -1393,6 +2285,9 @@
   
   // Function to update icon display
   async function updateIconDisplay() {
+    // Get fresh reference to icon element (it might have been recreated)
+    const iconEl = document.querySelector('.run-icon');
+    
     if (iconPath && iconPath.trim()) {
       try {
         // Use backend to read image as base64 data URL
@@ -1400,7 +2295,7 @@
         
         // Update main table icon
         if (iconEl) {
-          iconEl.innerHTML = `<img src="${iconUrl}" alt="Run Icon" style="width: 24px; height: 24px; object-fit: contain;">`;
+          iconEl.innerHTML = `<img src="${iconUrl}" alt="Run Icon" style="width: auto; height: 100%; object-fit: fill;">`;
         }
         
         // Update config preview icon
@@ -1493,36 +2388,55 @@
 
   // Build table rows
   function renderRows() {
-    titleEl.textContent = runTitle;
+    // Get fresh references to DOM elements (they might have been recreated)
+    const titleEl = document.getElementById('run-title');
+    const bodyEl = document.getElementById('splits-body');
+    
+    if (titleEl) titleEl.textContent = runTitle;
     updateIconDisplay();
-    bodyEl.innerHTML = '';
-  splitNames.forEach((name, i) => {
+    if (bodyEl) bodyEl.innerHTML = '';
+    
+    splitNames.forEach((name, i) => {
       const tr = document.createElement('tr');
       tr.className = 'row';
       tr.dataset.index = String(i);
-    tr.innerHTML = `
-        <td class="name">${name}</td>
-    <td class="time total" id="tot-${i}">—</td>
-    <td class="time current" id="seg-${i}">00:00.000</td>
-  <td class="time diff" id="diff-${i}">—</td>
-  <td class="time best" id="best-${i}">${bestTotals[i] ? fmt(bestTotals[i]) : '—'}</td>
-  <td class="time bestseg" id="bestseg-${i}">—</td>
-  <td class="time bestcomplete" id="bestcomplete-${i}">—</td>
+      
+      // Build icon display for split (non-clickable in main table) with placeholder
+      tr.innerHTML = `
+        <td class="name"><img src="spliticons/s_icon.png" class="split-icon-display" alt="Split icon"><span class="split-name">${name}</span></td>
+        <td class="time total" id="tot-${i}">—</td>
+        <td class="time current" id="seg-${i}">00:00.000</td>
+        <td class="time diff" id="diff-total-${i}">—</td>
+        <td class="time diff" id="diff-segment-${i}">—</td>
+        <td class="time diff" id="diff-complete-${i}">—</td>
+        <td class="time best" id="best-${i}">${bestTotals[i] ? fmt(bestTotals[i]) : '—'}</td>
+        <td class="time bestseg" id="bestseg-${i}">—</td>
+        <td class="time bestcomplete" id="bestcomplete-${i}">—</td>
       `;
-      bodyEl.appendChild(tr);
+      
+      // Load actual icon asynchronously
+      (async () => {
+        const iconSrc = await getIconDisplaySrc(splitIcons[i]);
+        const iconImg = tr.querySelector('.split-icon-display');
+        if (iconImg) iconImg.src = iconSrc;
+      })();
+      
+      if (bodyEl) bodyEl.appendChild(tr);
     });
-  // Reapply active highlight based on currentSplit
-  setActiveRow(currentSplit > 0 ? currentSplit - 1 : -1);
-  
-  // Apply column visibility and display settings
-  updateColumnVisibility();
-  updateDisplaySettings();
+    
+    // Reapply active highlight based on currentSplit
+    setActiveRow(currentSplit > 0 ? currentSplit - 1 : -1);
+    
+    // Apply column visibility and display settings
+    updateColumnVisibility();
+    updateDisplaySettings();
   }
 
   function setActiveRow(idx /* 0-based, -1 none */) {
     document.querySelectorAll('.row').forEach((r) => r.classList.remove('active'));
     if (idx >= 0) {
-      const row = bodyEl.querySelector(`tr[data-index="${idx}"]`);
+      const bodyEl = document.getElementById('splits-body');
+      const row = bodyEl?.querySelector(`tr[data-index="${idx}"]`);
       if (row) row.classList.add('active');
     }
   }
@@ -1535,19 +2449,73 @@
   return prev + seg;
   }
 
-  function updateDiff(i, cumulative) {
-    const diffEl = document.getElementById(`diff-${i}`);
+  function updateDiff(i, cumulative, currentSegment) {
     // Only show for completed splits and currently active split
     const isCompleted = (currentSplit === 0 && (totalCumulative[i] || 0) > 0) || (i + 1 < currentSplit);
     const isCurrent = i + 1 === currentSplit;
-    if (!isCompleted && !isCurrent) { diffEl.textContent = '—'; diffEl.classList.remove('positive','negative'); return; }
-    const best = bestTotals[i];
-    if (!best) { diffEl.textContent = '—'; diffEl.classList.remove('positive','negative'); return; }
-    const delta = cumulative - best;
-    const sign = delta === 0 ? '' : (delta > 0 ? '+' : '−');
-    diffEl.textContent = `${sign}${fmt(Math.abs(delta))}`;
-    diffEl.classList.toggle('positive', delta > 0);
-    diffEl.classList.toggle('negative', delta < 0);
+    
+    // Update Diff vs Best Total
+    const diffTotalEl = document.getElementById(`diff-total-${i}`);
+    if (diffTotalEl) {
+      if (!isCompleted && !isCurrent) { 
+        diffTotalEl.textContent = '—'; 
+        diffTotalEl.classList.remove('positive','negative'); 
+      } else {
+        const best = bestTotals[i];
+        if (!best) { 
+          diffTotalEl.textContent = '—'; 
+          diffTotalEl.classList.remove('positive','negative'); 
+        } else {
+          const delta = cumulative - best;
+          const sign = delta === 0 ? '' : (delta > 0 ? '+' : '−');
+          diffTotalEl.textContent = `${sign}${fmt(Math.abs(delta))}`;
+          diffTotalEl.classList.toggle('positive', delta > 0);
+          diffTotalEl.classList.toggle('negative', delta < 0);
+        }
+      }
+    }
+    
+    // Update Diff vs Best This Segment
+    const diffSegmentEl = document.getElementById(`diff-segment-${i}`);
+    if (diffSegmentEl) {
+      if (!isCompleted && !isCurrent) { 
+        diffSegmentEl.textContent = '—'; 
+        diffSegmentEl.classList.remove('positive','negative'); 
+      } else {
+        const bestSeg = bestSegments[i];
+        if (!bestSeg) { 
+          diffSegmentEl.textContent = '—'; 
+          diffSegmentEl.classList.remove('positive','negative'); 
+        } else {
+          const delta = currentSegment - bestSeg;
+          const sign = delta === 0 ? '' : (delta > 0 ? '+' : '−');
+          diffSegmentEl.textContent = `${sign}${fmt(Math.abs(delta))}`;
+          diffSegmentEl.classList.toggle('positive', delta > 0);
+          diffSegmentEl.classList.toggle('negative', delta < 0);
+        }
+      }
+    }
+    
+    // Update Diff vs Best Complete Run
+    const diffCompleteEl = document.getElementById(`diff-complete-${i}`);
+    if (diffCompleteEl) {
+      if (!isCompleted && !isCurrent) { 
+        diffCompleteEl.textContent = '—'; 
+        diffCompleteEl.classList.remove('positive','negative'); 
+      } else {
+        const bestComplete = bestCompleteSplits[i];
+        if (!bestComplete) { 
+          diffCompleteEl.textContent = '—'; 
+          diffCompleteEl.classList.remove('positive','negative'); 
+        } else {
+          const delta = cumulative - bestComplete;
+          const sign = delta === 0 ? '' : (delta > 0 ? '+' : '−');
+          diffCompleteEl.textContent = `${sign}${fmt(Math.abs(delta))}`;
+          diffCompleteEl.classList.toggle('positive', delta > 0);
+          diffCompleteEl.classList.toggle('negative', delta < 0);
+        }
+      }
+    }
   }
 
   function tick() {
@@ -1579,16 +2547,19 @@
   const bestCompEl = document.getElementById(`bestcomplete-${i}`);
   if (bestCompEl) bestCompEl.textContent = bestCompleteSplits[i] ? fmt(bestCompleteSplits[i]) : '—';
 
-  updateDiff(i, tot || runningCumulative);
+  updateDiff(i, tot || runningCumulative, seg);
     }
 
     // If run has ended, show remembered total; else live total
+    const totalEl = document.getElementById('total-timer');
     if (currentSplit === 0 && finalTotalMs > 0) {
-      totalEl.textContent = fmtTotal(finalTotalMs);
+      if (totalEl) totalEl.textContent = fmtTotal(finalTotalMs);
     } else {
-      totalEl.textContent = fmtTotal(totalElapsedNow(now));
+      if (totalEl) totalEl.textContent = fmtTotal(totalElapsedNow(now));
     }
     // Footer values
+    const bestCompleteEl = document.getElementById('best-complete');
+    const sumBestSegsEl = document.getElementById('sum-best-segments');
     const bestCompleteTotal = bestCompleteSplits?.[splitNames.length - 1] || 0;
     if (bestCompleteEl) bestCompleteEl.textContent = bestCompleteTotal ? fmt(bestCompleteTotal) : '—';
     const sumBestSegs = (bestSegments || []).slice(0, splitNames.length).reduce((a, b) => a + (b || 0), 0);
@@ -1679,7 +2650,7 @@
           // Get current column widths to include in save
           const currentWidths = getColumnWidths();
           // Persist runTitle, splitNames, and PBs
-          saveState({ runTitle, iconPath, splitNames, bestTotals, bestSegments, bestCompleteSplits, columnWidths: currentWidths });
+          saveState({ runTitle, iconPath, splitNames, splitIcons, bestTotals, bestSegments, bestCompleteSplits, columnWidths: currentWidths, backgroundColor, runTitleColor, splitTableColor, totalTimerTextColor, totalTimerDigitsColor, sumBestSegmentsColor, bestCompleteRunColor, splitBg1Color, splitBg2Color });
         }
         document.body.removeChild(confirm);
         // proceed to actual reset after decision
@@ -1717,6 +2688,16 @@
       runTitle,
       iconPath,
       splitNames,
+      splitIcons,
+      backgroundColor,
+      runTitleColor,
+      splitTableColor,
+      totalTimerTextColor,
+      totalTimerDigitsColor,
+      sumBestSegmentsColor,
+      bestCompleteRunColor,
+      splitBg1Color,
+      splitBg2Color,
       bestTotals,
       bestSegments,
       bestCompleteSplits,
@@ -1912,23 +2893,11 @@
   // Keyboard: Backspace advances split
   window.addEventListener('keydown', (e) => {
     // Block hotkeys when config is open
-  if (isModalOpen()) {
+    if (isModalOpen()) {
       if (e.key === 'Escape') closeConfig();
       return;
     }
-    if (e.key === 'Backspace') {
-      e.preventDefault();
-      if (paused) {
-        // resume
-        const now = performance.now();
-        lastAdvanceEpoch = now;
-        paused = false;
-      } else if (currentSplit === 0) {
-        startRunIfNeeded();
-      } else {
-        advanceSplit();
-      }
-    }
+    // Note: Backspace is now handled exclusively by global shortcuts system
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') { // Ctrl+R to reset (dev helper)
       e.preventDefault();
       resetRun();
@@ -1959,15 +2928,13 @@
         // Set up periodic polling for global key presses
         setInterval(async () => {
           try {
-            // Only process global keys when window is NOT focused
-            if (!windowHasFocus) {
-              const newKeys = await window.__TAURI__.core.invoke('check_global_keys');
-              
-              // Check if Backspace was newly pressed
-              if (newKeys.includes('Backspace')) {
-                console.log('Global Backspace detected via polling (window unfocused)');
-                handleGlobalShortcut();
-              }
+            // Process global keys regardless of window focus state
+            const newKeys = await window.__TAURI__.core.invoke('check_global_keys');
+            
+            // Check if Backspace was newly pressed
+            if (newKeys.includes('Backspace')) {
+              console.log('Global Backspace detected via polling');
+              handleGlobalShortcut();
             }
           } catch (error) {
             // Silently ignore polling errors to avoid spam
@@ -2011,14 +2978,398 @@
 
   // Init
   console.log('Initializing app components...');
-  renderRows();
-  setActiveRow(-1);
-  buildContextMenu();
+  
+  // Always show welcome screen on startup
+  console.log('Showing welcome screen on startup');
+  showWelcomeScreen();
+  
   setupGlobalShortcuts(); // Setup global shortcuts
   console.log('Context menu built, starting timer...');
   const id = setInterval(tick, 50); // ~20 Hz is enough for readability
   window.addEventListener('beforeunload', () => clearInterval(id));
   console.log('App initialization complete!');
+
+  // ============ ICON SELECTOR FUNCTIONS ============
+  
+  let currentIconSplitIndex = -1;
+  let selectedIconPath = '';
+  let availableIcons = [];
+
+  // Open icon selector modal for a specific split
+  window.openIconSelector = function(splitIndex) {
+    console.log('openIconSelector called for split index:', splitIndex);
+    console.log('Current splitIcons array:', splitIcons);
+    console.log('splitIcons length:', splitIcons.length);
+    currentIconSplitIndex = splitIndex;
+    selectedIconPath = '';
+    loadAvailableIcons();
+    showIconSelector();
+  };
+
+  // Load all available icons from default folder and custom additions
+  async function loadAvailableIcons() {
+    availableIcons = [];
+    
+    // Load default icons from spliticons/
+    const defaultIcons = [
+      'apple1.png', 'apple2.png', 'arrow1.png', 'arrow2.png', 'arrow3.png', 'banana1.png', 'banana2.png', 'bomb.png', 'boy1.png', 'boy2.png', 'bzzt.png', 'car1.png', 'car2.png', 'car3.png', 'check1.png', 'check2.png', 'check3.png',
+      'cross1.png', 'cross2.png', 'cross3.png', 'egg.png', 'explosion.png', 'evil1.png', 'evil2.png',
+      'eye1.png', 'factory.png', 'finish.png', 'flag1.png', 'flag2.png', 'flag3.png', 'flag4.png', 'flag5.png', 'house1.png', 'skull.png', 'stairs.png', 's_icon.png', 'star1.png', 'star2.png', 'star3.png', 'sun1.png', 'sword1.png', 'sword2.png', 'tomato.png', 'town1.png', 'town2.png'
+    ];
+    
+    for (const icon of defaultIcons) {
+      availableIcons.push({
+        path: `spliticons/${icon}`,
+        name: icon.replace('.png', ''),
+        isCustom: false
+      });
+    }
+    
+    // Load custom icons from localStorage if any
+    const customIcons = getCustomIcons();
+    availableIcons.push(...customIcons);
+    
+    renderIconGallery();
+  }
+
+  // Get custom icons from localStorage
+  function getCustomIcons() {
+    try {
+      const custom = localStorage.getItem('speedrun_splitter_custom_icons');
+      return custom ? JSON.parse(custom) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  // Save custom icons to localStorage
+  function saveCustomIcons(icons) {
+    try {
+      localStorage.setItem('speedrun_splitter_custom_icons', JSON.stringify(icons));
+    } catch {}
+  }
+
+  // Render the icon gallery
+  async function renderIconGallery() {
+    const gallery = document.getElementById('icon-gallery');
+    if (!gallery) return;
+    
+    gallery.innerHTML = '';
+    
+    for (let index = 0; index < availableIcons.length; index++) {
+      const icon = availableIcons[index];
+      const iconDiv = document.createElement('div');
+      iconDiv.className = 'icon-item';
+      iconDiv.dataset.index = index;
+      
+      // Use placeholder initially
+      iconDiv.innerHTML = `
+        <img src="spliticons/star1.png" alt="${icon.name}" class="gallery-icon">
+        <span class="icon-name">${icon.name}</span>
+        ${icon.isCustom ? '<span class="custom-badge">Custom</span>' : ''}
+      `;
+      
+      // Load actual icon asynchronously
+      (async () => {
+        try {
+          const iconSrc = await getIconDisplaySrc(icon.path);
+          const imgEl = iconDiv.querySelector('.gallery-icon');
+          if (imgEl) imgEl.src = iconSrc;
+        } catch (error) {
+          console.log('Failed to load gallery icon:', icon.path);
+        }
+      })();
+      
+      iconDiv.addEventListener('click', () => selectIcon(index));
+      gallery.appendChild(iconDiv);
+    }
+  }
+
+  // Select an icon from the gallery
+  function selectIcon(index) {
+    // Remove previous selection
+    document.querySelectorAll('.icon-item').forEach(item => {
+      item.classList.remove('selected');
+    });
+    
+    // Add selection to clicked item
+    const iconItem = document.querySelector(`.icon-item[data-index="${index}"]`);
+    if (iconItem) {
+      iconItem.classList.add('selected');
+      selectedIconPath = availableIcons[index].path;
+      
+      // Enable select button
+      const selectBtn = document.getElementById('icon-select');
+      const removeBtn = document.getElementById('icon-remove-selected');
+      if (selectBtn) selectBtn.disabled = false;
+      if (removeBtn) removeBtn.disabled = !availableIcons[index].isCustom;
+    }
+  }
+
+  // Show the icon selector modal
+  function showIconSelector() {
+    const modal = document.getElementById('icon-selector-modal');
+    if (modal) {
+      modal.classList.remove('hidden');
+      
+      // Reset selection state
+      document.getElementById('icon-select').disabled = true;
+      document.getElementById('icon-remove-selected').disabled = true;
+    }
+  }
+
+  // Hide the icon selector modal
+  function hideIconSelector() {
+    const modal = document.getElementById('icon-selector-modal');
+    if (modal) {
+      modal.classList.add('hidden');
+    }
+  }
+
+  // Apply selected icon to split
+  function applySelectedIcon() {
+    if (currentIconSplitIndex >= 0 && selectedIconPath) {
+      // Ensure splitIcons array has enough elements
+      while (splitIcons.length <= currentIconSplitIndex) {
+        splitIcons.push('');
+      }
+      
+      splitIcons[currentIconSplitIndex] = selectedIconPath;
+      console.log('Applied icon to split', currentIconSplitIndex, ':', selectedIconPath);
+      console.log('Current splitIcons array:', splitIcons);
+      
+      renderRows(); // Re-render main table to show new icon
+      
+      // Also update configuration table if it's open
+      if (cfgSplitsTbody && cfgSplitsTbody.children.length > 0) {
+        console.log('Setting cfgCount from applySelectedIcon:', splitNames.length);
+        cfgCount.value = String(splitNames.length);
+        // Gather current split names from input fields to preserve them
+        const currentNames = Array.from(cfgSplitsTbody.querySelectorAll('input')).map(input => input.value);
+        cfgRenderRows(splitNames.length, currentNames);
+      }
+      
+      // Save to localStorage for persistence between sessions
+      saveState({ runTitle, iconPath, splitNames, splitIcons, bestTotals, bestSegments, bestCompleteSplits, backgroundColor, runTitleColor, splitTableColor, totalTimerTextColor, totalTimerDigitsColor, sumBestSegmentsColor, bestCompleteRunColor, splitBg1Color, splitBg2Color });
+      
+      hideIconSelector();
+    }
+  }
+
+  // Add custom icon via file browser
+  function addCustomIcon() {
+    console.log('addCustomIcon called');
+    showIconFileBrowser();
+  }
+
+  // Show file browser specifically for icon selection
+  async function showIconFileBrowser() {
+    const modal = document.createElement('div');
+    modal.className = 'file-browser-modal';
+    modal.innerHTML = `
+      <div class="file-browser-content">
+        <div class="file-browser-header">
+          <h3>Choose Icon File</h3>
+          <button class="close-btn" onclick="this.closest('.file-browser-modal').remove()">×</button>
+        </div>
+        <div class="file-browser-path">
+          <button id="iconFbHome">🏠</button>
+          <button id="iconFbUp">⬆️</button>
+          <span id="iconFbPath">/</span>
+        </div>
+        <div class="file-browser-list" id="iconFbList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px;">
+          Loading...
+        </div>
+        <div class="file-browser-input">
+          <button id="iconFbCancel">Cancel</button>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    let currentPath = '/';
+    
+    // Try to get home directory as starting point
+    try {
+      currentPath = await window.__TAURI__.core.invoke('home_dir');
+    } catch (error) {
+      console.error('Failed to get home directory:', error);
+    }
+    
+    const pathEl = document.getElementById('iconFbPath');
+    const listEl = document.getElementById('iconFbList');
+    const homeBtn = document.getElementById('iconFbHome');
+    const upBtn = document.getElementById('iconFbUp');
+    const cancelBtn = document.getElementById('iconFbCancel');
+    
+    async function loadIconDirectory(path) {
+      if (!pathEl || !listEl) return;
+      
+      pathEl.textContent = path;
+      listEl.innerHTML = 'Loading...';
+      
+      try {
+        const entries = await window.__TAURI__.core.invoke('list_dir', { path });
+        listEl.innerHTML = '';
+        
+        // Filter for image files and directories
+        const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp'];
+        const filteredEntries = entries.filter(entry => {
+          if (entry.is_dir) return true;
+          const ext = entry.name.toLowerCase().split('.').pop();
+          return imageExtensions.includes('.' + ext);
+        });
+        
+        if (filteredEntries.length === 0) {
+          listEl.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 20px; color: #888;">No image files found in this directory</div>';
+          return;
+        }
+        
+        filteredEntries.forEach(entry => {
+          const item = document.createElement('div');
+          item.className = 'icon-file-item';
+          item.style.cssText = `
+            padding: 8px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            cursor: pointer;
+            text-align: center;
+            background: #2a2a2a;
+            transition: all 0.2s ease;
+          `;
+          
+          if (entry.is_dir) {
+            item.innerHTML = `
+              <div style="font-size: 24px; margin-bottom: 4px;">📁</div>
+              <div style="font-size: 12px; word-break: break-word;">${entry.name}</div>
+            `;
+            item.addEventListener('click', () => {
+              currentPath = currentPath.endsWith('/') ? currentPath + entry.name : currentPath + '/' + entry.name;
+              loadIconDirectory(currentPath);
+            });
+          } else {
+            const fullPath = currentPath.endsWith('/') ? currentPath + entry.name : currentPath + '/' + entry.name;
+            item.innerHTML = `
+              <div style="width: 64px; height: 64px; margin: 0 auto 4px; background: #1a1a1a; border-radius: 4px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+                <div style="font-size: 20px;" class="loading-placeholder">🖼️</div>
+              </div>
+              <div style="font-size: 11px; word-break: break-word;">${entry.name}</div>
+            `;
+            
+            // Load thumbnail asynchronously
+            (async () => {
+              try {
+                const base64Data = await window.__TAURI__.core.invoke('read_image_as_base64', { path: fullPath });
+                const placeholder = item.querySelector('.loading-placeholder');
+                if (placeholder) {
+                  placeholder.outerHTML = `<img src="${base64Data}" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Thumbnail">`;
+                }
+              } catch (error) {
+                console.log('Failed to load thumbnail for:', entry.name);
+                // Keep the placeholder icon
+              }
+            })();
+            
+            item.addEventListener('click', () => selectIconFile(fullPath, entry.name));
+          }
+          
+          item.addEventListener('mouseenter', () => {
+            item.style.borderColor = '#666';
+            item.style.background = '#333';
+          });
+          item.addEventListener('mouseleave', () => {
+            item.style.borderColor = '#444';
+            item.style.background = '#2a2a2a';
+          });
+          
+          listEl.appendChild(item);
+        });
+        
+      } catch (error) {
+        console.error('Failed to load directory:', error);
+        listEl.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 20px; color: #f44;">Error loading directory</div>';
+      }
+    }
+    
+    function selectIconFile(filePath, fileName) {
+      console.log('Selected icon file:', filePath);
+      
+      // Add to custom icons
+      const customIcons = getCustomIcons();
+      
+      // Check if icon already exists
+      const existingIcon = customIcons.find(icon => icon.path === filePath);
+      if (!existingIcon) {
+        customIcons.push({
+          path: filePath,
+          name: fileName.replace(/\.[^/.]+$/, ''),
+          isCustom: true
+        });
+        saveCustomIcons(customIcons);
+        
+        // Reload gallery
+        loadAvailableIcons();
+        console.log('Custom icon added:', fileName);
+      } else {
+        console.log('Icon already exists');
+      }
+      
+      // Close the file browser
+      modal.remove();
+    }
+    
+    // Event listeners
+    homeBtn?.addEventListener('click', async () => {
+      try {
+        currentPath = await window.__TAURI__.core.invoke('home_dir');
+        loadIconDirectory(currentPath);
+      } catch (error) {
+        console.error('Failed to get home directory:', error);
+      }
+    });
+    
+    upBtn?.addEventListener('click', () => {
+      const lastSlash = currentPath.lastIndexOf('/');
+      if (lastSlash > 0) {
+        currentPath = currentPath.substring(0, lastSlash);
+      } else {
+        currentPath = '/';
+      }
+      loadIconDirectory(currentPath);
+    });
+    
+    cancelBtn?.addEventListener('click', () => {
+      modal.remove();
+    });
+    
+    // Load initial directory
+    loadIconDirectory(currentPath);
+  }
+
+  // Remove selected custom icon
+  function removeSelectedIcon() {
+    if (selectedIconPath) {
+      const customIcons = getCustomIcons();
+      const updatedIcons = customIcons.filter(icon => icon.path !== selectedIconPath);
+      saveCustomIcons(updatedIcons);
+      loadAvailableIcons();
+    }
+  }
+
+  // Event listeners for icon selector
+  document.getElementById('icon-close')?.addEventListener('click', hideIconSelector);
+  document.getElementById('icon-cancel')?.addEventListener('click', hideIconSelector);
+  document.getElementById('icon-select')?.addEventListener('click', applySelectedIcon);
+  document.getElementById('icon-add-custom')?.addEventListener('click', addCustomIcon);
+  document.getElementById('icon-remove-selected')?.addEventListener('click', removeSelectedIcon);
+
+  // Close modal when clicking outside
+  document.getElementById('icon-selector-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'icon-selector-modal') {
+      hideIconSelector();
+    }
+  });
   
   } // end initApp
 })();

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Speedrun Splitter",
+  "productName": "SplitRun",
   "version": "0.1.0",
   "identifier": "com.speedrunsplitter.app",
   "build": {
@@ -9,7 +9,7 @@
   "app": {
     "windows": [
       {
-        "title": "Speedrun Splitter",
+        "title": "SplitRun",
         "width": 800,
         "height": 600,
         "resizable": true,
