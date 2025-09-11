@@ -507,7 +507,7 @@
   
   function getDisplaySettings() {
     const globalSettings = loadGlobalSettings();
-    return globalSettings.displaySettings || {
+    let settings = globalSettings.displaySettings || {
       rowHeightPreset: 'normal',
       rowHeight: 36,
       paddingTop: 8,
@@ -520,6 +520,32 @@
       showSumBest: true,
       showBestComplete: true
     };
+    
+    // Clean up any color properties that shouldn't be in displaySettings
+    const cleanSettings = {
+      rowHeightPreset: settings.rowHeightPreset || 'normal',
+      rowHeight: settings.rowHeight || 36,
+      paddingTop: settings.paddingTop ?? 8,
+      paddingBottom: settings.paddingBottom ?? 8,
+      splitTableFontSize: settings.splitTableFontSize || 14,
+      totalTimerFontSize: settings.totalTimerFontSize || 24,
+      totalTimerBold: settings.totalTimerBold || false,
+      summaryFontSize: settings.summaryFontSize || 16,
+      globalFontFamily: settings.globalFontFamily || 'system-ui',
+      showSumBest: settings.showSumBest ?? true,
+      showBestComplete: settings.showBestComplete ?? true
+    };
+    
+    // If we cleaned anything, save the clean version back to localStorage
+    if (JSON.stringify(settings) !== JSON.stringify(cleanSettings)) {
+      console.log('Cleaning up displaySettings, removing color properties');
+      const globalSettings = loadGlobalSettings();
+      globalSettings.displaySettings = cleanSettings;
+      saveGlobalSettings(globalSettings);
+    }
+    
+    console.log('getDisplaySettings returning:', cleanSettings);
+    return cleanSettings;
   }
   
   function saveColumnVisibility(visibility) {
@@ -535,9 +561,14 @@
   }
   
   function saveDisplaySettings(settings) {
+    console.log('=== SAVE DISPLAY SETTINGS DEBUG ===');
+    console.log('Settings object received:', settings);
+    console.log('Settings globalFontFamily:', settings.globalFontFamily);
     const globalSettings = loadGlobalSettings();
     globalSettings.displaySettings = settings;
+    console.log('Global settings before save:', globalSettings);
     saveGlobalSettings(globalSettings);
+    console.log('Saved to localStorage');
   }
 
   function updateColumnStyles(visibility, widths) {
@@ -722,19 +753,27 @@
     
     // Update summary visibility
     const summaryTable = document.querySelector('.summary-table');
+    console.log('Summary table found:', !!summaryTable);
+    console.log('Settings showSumBest:', settings.showSumBest, 'showBestComplete:', settings.showBestComplete);
+    
     if (summaryTable) {
-      const sumBestRow = Array.from(summaryTable.querySelectorAll('tr')).find(row => 
-        row.textContent.includes('Sum of Best Segments')
-      );
-      const bestCompleteRow = Array.from(summaryTable.querySelectorAll('tr')).find(row => 
-        row.textContent.includes('Best Complete Run')
-      );
+      // Find rows by their value element IDs
+      const sumBestElement = document.getElementById('sum-best-segments');
+      const bestCompleteElement = document.getElementById('best-complete');
+      
+      const sumBestRow = sumBestElement?.closest('tr');
+      const bestCompleteRow = bestCompleteElement?.closest('tr');
+      
+      console.log('Sum of Best row found:', !!sumBestRow);
+      console.log('Best Complete row found:', !!bestCompleteRow);
       
       if (sumBestRow) {
         sumBestRow.style.display = settings.showSumBest ? '' : 'none';
+        console.log('Sum of Best row display set to:', settings.showSumBest ? 'visible' : 'none');
       }
       if (bestCompleteRow) {
         bestCompleteRow.style.display = settings.showBestComplete ? '' : 'none';
+        console.log('Best Complete row display set to:', settings.showBestComplete ? 'visible' : 'none');
       }
     }
   }
@@ -835,6 +874,36 @@
         if (document.getElementById('split-bg-2-color-picker')) document.getElementById('split-bg-2-color-picker').value = splitBg2Color;
         if (document.getElementById('split-bg-2-color-hex')) document.getElementById('split-bg-2-color-hex').value = splitBg2Color;
         document.documentElement.style.setProperty('--split-bg-2', splitBg2Color);
+      }
+      
+      // Load display settings if present (filter out color settings)
+      if (data.displaySettings && typeof data.displaySettings === 'object') {
+        console.log('Loading display settings from file:', data.displaySettings);
+        
+        // Only copy valid display settings properties, exclude colors
+        const validDisplaySettings = {
+          rowHeightPreset: data.displaySettings.rowHeightPreset || 'normal',
+          rowHeight: data.displaySettings.rowHeight || 36,
+          paddingTop: data.displaySettings.paddingTop ?? 8,
+          paddingBottom: data.displaySettings.paddingBottom ?? 8,
+          splitTableFontSize: data.displaySettings.splitTableFontSize || 14,
+          totalTimerFontSize: data.displaySettings.totalTimerFontSize || 24,
+          totalTimerBold: data.displaySettings.totalTimerBold || false,
+          summaryFontSize: data.displaySettings.summaryFontSize || 16,
+          globalFontFamily: data.displaySettings.globalFontFamily || 'system-ui',
+          showSumBest: data.displaySettings.showSumBest ?? true,
+          showBestComplete: data.displaySettings.showBestComplete ?? true
+        };
+        
+        console.log('Filtered display settings:', validDisplaySettings);
+        
+        const globalSettings = loadGlobalSettings();
+        globalSettings.displaySettings = validDisplaySettings;
+        saveGlobalSettings(globalSettings);
+        console.log('Display settings loaded and saved to localStorage');
+        
+        // Apply the loaded settings immediately
+        updateDisplaySettings();
       }
       
       // Load column widths if present
@@ -1230,6 +1299,11 @@
     
     // Load display settings
     const displaySettings = getDisplaySettings();
+    console.log('=== OPENING CONFIG DEBUG ===');
+    console.log('Display settings loaded:', displaySettings);
+    console.log('globalFontFamily from settings:', displaySettings.globalFontFamily);
+    console.log('totalTimerBold from settings:', displaySettings.totalTimerBold);
+    
     document.getElementById('row-height-preset').value = displaySettings.rowHeightPreset;
     document.getElementById('row-height-value').value = displaySettings.rowHeight;
     document.getElementById('row-padding-top').value = displaySettings.paddingTop;
@@ -1239,6 +1313,9 @@
     document.getElementById('total-timer-bold').checked = displaySettings.totalTimerBold;
     document.getElementById('summary-font-size').value = displaySettings.summaryFontSize;
     document.getElementById('global-font-family').value = displaySettings.globalFontFamily;
+    
+    console.log('Font family dropdown after setting:', document.getElementById('global-font-family').value);
+    console.log('Total timer bold checkbox after setting:', document.getElementById('total-timer-bold').checked);
     document.getElementById('background-color-picker').value = backgroundColor;
     document.getElementById('background-color-hex').value = backgroundColor;
     
@@ -1367,20 +1444,26 @@
         paddingBottom: parseInt(document.getElementById('row-padding-bottom').value) ?? 8,
         splitTableFontSize: parseInt(document.getElementById('split-table-font-size').value) || 14,
         totalTimerFontSize: parseInt(document.getElementById('total-timer-font-size').value) || 24,
+        totalTimerBold: document.getElementById('total-timer-bold').checked || false,
         summaryFontSize: parseInt(document.getElementById('summary-font-size').value) || 16,
-        backgroundColor: document.getElementById('background-color-hex').value || '#0e0f13',
-        runTitleColor: document.getElementById('run-title-color-hex').value || '#c9d1d9',
-        splitTableColor: document.getElementById('split-table-color-hex').value || '#c9d1d9',
-        totalTimerTextColor: document.getElementById('total-timer-text-color-hex').value || '#8b9bb4',
-        totalTimerDigitsColor: document.getElementById('total-timer-digits-color-hex').value || '#c9d1d9',
-        sumBestSegmentsColor: document.getElementById('sum-best-segments-color-hex').value || '#c9d1d9',
-        bestCompleteRunColor: document.getElementById('best-complete-run-color-hex').value || '#c9d1d9',
-        splitBg1Color: document.getElementById('split-bg-1-color-hex').value || '#0000000a',
-        splitBg2Color: document.getElementById('split-bg-2-color-hex').value || '#00000015',
+        globalFontFamily: document.getElementById('global-font-family').value || 'system-ui',
         showSumBest: document.getElementById('show-sum-best').checked,
         showBestComplete: document.getElementById('show-best-complete').checked
       };
+      console.log('=== FORM SUBMIT DISPLAY SETTINGS ===');
+      console.log('Form submit displaySettings:', displaySettings);
       saveDisplaySettings(displaySettings);
+      
+      // Save color settings to global variables (not in displaySettings)
+      backgroundColor = document.getElementById('background-color-hex').value || '#0e0f13';
+      runTitleColor = document.getElementById('run-title-color-hex').value || '#c9d1d9';
+      splitTableColor = document.getElementById('split-table-color-hex').value || '#c9d1d9';
+      totalTimerTextColor = document.getElementById('total-timer-text-color-hex').value || '#8b9bb4';
+      totalTimerDigitsColor = document.getElementById('total-timer-digits-color-hex').value || '#c9d1d9';
+      sumBestSegmentsColor = document.getElementById('sum-best-segments-color-hex').value || '#c9d1d9';
+      bestCompleteRunColor = document.getElementById('best-complete-run-color-hex').value || '#c9d1d9';
+      splitBg1Color = document.getElementById('split-bg-1-color-hex').value || '#0000000a';
+      splitBg2Color = document.getElementById('split-bg-2-color-hex').value || '#00000015';
       
       // Get current column widths to include in save
       const currentWidths = getColumnWidths();
@@ -1537,7 +1620,31 @@
               splitBg2Color: "#2c3e50",
               bestTotals: [],
               bestSegments: [],
-              bestCompleteSplits: []
+              bestCompleteSplits: [],
+              columnWidths: {
+                split: 150,
+                total: 100,
+                segment: 100,
+                diff: 80,
+                diffSegment: 80,
+                diffComplete: 80,
+                bestTotal: 100,
+                bestSegment: 100,
+                bestComplete: 100
+              },
+              displaySettings: {
+                rowHeightPreset: 'normal',
+                rowHeight: 36,
+                paddingTop: 8,
+                paddingBottom: 8,
+                splitTableFontSize: 14,
+                totalTimerFontSize: 24,
+                totalTimerBold: false,
+                summaryFontSize: 16,
+                globalFontFamily: 'system-ui',
+                showSumBest: true,
+                showBestComplete: true
+              }
             }, null, 2);
             await window.__TAURI__.core.invoke('write_text_file', { path: fullPath, contents: defaultContent });
             console.log('Created new file:', fullPath);
@@ -1951,6 +2058,9 @@
           console.log('splitIcons length:', splitIcons?.length);
           console.log('splitIcons array:', JSON.stringify(splitIcons));
           
+          const displaySettings = getDisplaySettings();
+          console.log('Display settings to save:', displaySettings);
+          
           const saveData = {
             runTitle: runTitle || 'Run Title',
             iconPath: iconPath || '',
@@ -1967,7 +2077,8 @@
             sumBestSegmentsColor: sumBestSegmentsColor || '#c9d1d9',
             bestCompleteRunColor: bestCompleteRunColor || '#c9d1d9',
             splitBg1Color: splitBg1Color || '#0000000a',
-            splitBg2Color: splitBg2Color || '#00000015'
+            splitBg2Color: splitBg2Color || '#00000015',
+            displaySettings: displaySettings
           };
           console.log('=== COMPLETE SAVE DATA ===');
           console.log('saveData:', saveData);
@@ -2188,7 +2299,7 @@
     };
     saveColumnWidths(widths);
     
-    // Update display settings
+    // Update display settings (font sizes, layout, visibility - NOT colors)
     const displaySettings = {
       rowHeightPreset: document.getElementById('row-height-preset')?.value || 'normal',
       rowHeight: parseInt(document.getElementById('row-height-value')?.value) || 36,
@@ -2202,6 +2313,19 @@
       showSumBest: document.getElementById('show-sum-best')?.checked ?? true,
       showBestComplete: document.getElementById('show-best-complete')?.checked ?? true
     };
+    
+    console.log('=== FONT FAMILY DEBUG ===');
+    const fontFamilyElement = document.getElementById('global-font-family');
+    const totalTimerBoldElement = document.getElementById('total-timer-bold');
+    console.log('Font family element found:', !!fontFamilyElement);
+    console.log('Total timer bold element found:', !!totalTimerBoldElement);
+    console.log('Font family dropdown value:', fontFamilyElement?.value);
+    console.log('Total timer bold checkbox value:', totalTimerBoldElement?.checked);
+    console.log('Display settings globalFontFamily:', displaySettings.globalFontFamily);
+    console.log('Display settings totalTimerBold:', displaySettings.totalTimerBold);
+    console.log('Checkbox values - showSumBest:', document.getElementById('show-sum-best')?.checked, 'showBestComplete:', document.getElementById('show-best-complete')?.checked);
+    console.log('Display settings:', displaySettings.showSumBest, displaySettings.showBestComplete);
+    console.log('Complete display settings object:', displaySettings);
     saveDisplaySettings(displaySettings);
     
     // Update background color (saved in split file data, not global settings)
@@ -3012,9 +3136,9 @@
     
     // Load default icons from spliticons/
     const defaultIcons = [
-      'apple1.png', 'apple2.png', 'arrow1.png', 'arrow2.png', 'arrow3.png', 'banana1.png', 'banana2.png', 'bomb.png', 'boy1.png', 'boy2.png', 'bzzt.png', 'car1.png', 'car2.png', 'car3.png', 'check1.png', 'check2.png', 'check3.png',
-      'cross1.png', 'cross2.png', 'cross3.png', 'egg.png', 'explosion.png', 'evil1.png', 'evil2.png',
-      'eye1.png', 'factory.png', 'finish.png', 'flag1.png', 'flag2.png', 'flag3.png', 'flag4.png', 'flag5.png', 'house1.png', 'skull.png', 'stairs.png', 's_icon.png', 'star1.png', 'star2.png', 'star3.png', 'sun1.png', 'sword1.png', 'sword2.png', 'tomato.png', 'town1.png', 'town2.png'
+      'apple1.png', 'apple2.png', 'arrow1.png', 'arrow2.png', 'arrow3.png', 'banana1.png', 'banana2.png', 'bomb.png', 'book1.png', 'book2.png', 'box.png', 'boy1.png', 'boy2.png', 'bzzt.png', 'car1.png', 'car2.png', 'car3.png', 'cat.png', 'check1.png', 'check2.png', 'check3.png',
+      'cross1.png', 'cross2.png', 'cross3.png', 'crown.png', 'egg.png', 'explosion.png', 'evil1.png', 'evil2.png',
+      'eye1.png', 'factory.png', 'finish.png', 'flag1.png', 'flag2.png', 'flag3.png', 'flag4.png', 'flag5.png', 'gear.png', 'gem.png', 'house1.png', 'ok.png', 'skull.png', 'stairs.png', 's_icon.png', 'star1.png', 'star2.png', 'star3.png', 'sun1.png', 'sword1.png', 'sword2.png', 'tomato.png', 'town1.png', 'town2.png'
     ];
     
     for (const icon of defaultIcons) {
