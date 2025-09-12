@@ -222,7 +222,7 @@
     });
   }
   
-  function updateRecentFilesList() {
+  async function updateRecentFilesList() {
     const globalSettings = loadGlobalSettings();
     const recentFiles = globalSettings.recentFiles || [];
     const recentSection = document.getElementById('recent-section');
@@ -232,18 +232,35 @@
       recentSection.style.display = 'block';
       recentFilesList.innerHTML = '';
       
-      recentFiles.forEach((filePath, index) => {
+      for (const filePath of recentFiles) {
         const fileName = filePath.split('/').pop() || filePath;
+        let iconPath = 'spliticons/s_icon.png'; // default icon
+        
+        // Try to read the JSON file to get the iconPath
+        try {
+          const content = await fpInvoke('read_text_file', { path: filePath });
+          const data = JSON.parse(content);
+          if (data.iconPath && data.iconPath.trim() !== '') {
+            iconPath = data.iconPath;
+          }
+        } catch (error) {
+          console.log('Could not read file for icon:', filePath, error);
+          // Keep default icon
+        }
+        
         const button = document.createElement('button');
-        button.className = 'menu-button recent';
-        button.innerHTML = `📄 ${fileName}`;
+        button.className = 'menu-button recent-file-button';
+        button.innerHTML = `
+          <img src="${iconPath}" alt="Run Icon" class="recent-file-icon" onerror="this.src='spliticons/s_icon.png'">
+          <span class="recent-file-name">${fileName}</span>
+        `;
         button.title = filePath;
         button.addEventListener('click', () => {
           console.log('Recent file clicked:', filePath);
           loadSplitFileFromPath(filePath);
         });
         recentFilesList.appendChild(button);
-      });
+      }
     } else {
       recentSection.style.display = 'none';
     }

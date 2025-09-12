@@ -597,24 +597,46 @@ main { height: 100%; display: flex; flex-direction: column; align-items: flex-st
   border-color: #404651;
 }
 
-.menu-button.recent {
+.menu-button.recent-file-button {
   background: transparent;
   color: var(--fg);
   border-color: #2a2d37;
   font-size: 1rem;
-  padding: 12px 20px;
-  text-align: left;
-  justify-content: flex-start;
+  padding: 8px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 70px;
+  width: 80px;
 }
 
-.menu-button.recent:hover {
+.menu-button.recent-file-button:hover {
   background: #1a1d23;
   border-color: #404651;
 }
 
+.recent-file-icon {
+  width: 32px;
+  height: 32px;
+  margin: 5px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.recent-file-name {
+  font-size: 0.75rem;
+  text-align: center;
+  word-wrap: break-word;
+  max-width: 70px;
+  line-height: 1.2;
+}
+
 .recent-files-list {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
