@@ -33,6 +33,7 @@ main { height: 100%; display: flex; flex-direction: column; align-items: flex-st
 }
 .run-icon { font-size: 1.5rem; min-width: 40px; text-align: center; }
 .run-title { font-size: 1.1rem; font-weight: 500; flex: 1; color: var(--run-title-color); }
+.run-stats { font-size: 0.9rem; font-weight: 400; color: var(--total-timer-text-color); font-family: monospace; }
 
 /* Split table styling with custom font size */
 .splits-table {
@@ -260,6 +261,56 @@ main { height: 100%; display: flex; flex-direction: column; align-items: flex-st
 .modal input[type="text"], .modal input[type="number"] { background:#16181e; color:var(--fg); border:1px solid #2a2d37; border-radius:6px; padding:8px 10px; }
 .cfg-table { width:100%; border-collapse: collapse; }
 .cfg-table th, .cfg-table td { padding:8px 6px; border-bottom:1px solid var(--muted); }
+
+/* Hotkey Configuration Table */
+.hotkey-config-table { 
+  width: 100%; 
+  border-collapse: collapse; 
+  margin-top: 8px; 
+}
+.hotkey-config-table th, .hotkey-config-table td { 
+  padding: 12px 8px; 
+  border-bottom: 1px solid var(--muted); 
+  text-align: left; 
+}
+.hotkey-config-table th {
+  background: #1a1f29;
+  font-weight: 600;
+}
+.hotkey-config-table input[type="text"] {
+  background: #16181e;
+  color: var(--fg);
+  border: 1px solid #2a2d37;
+  border-radius: 4px;
+  padding: 6px 8px;
+  width: 150px;
+  margin-right: 8px;
+}
+.hotkey-config-table input[type="text"]:focus {
+  border-color: #4a90e2;
+  outline: none;
+  background: #1a1f29;
+}
+.hotkey-clear-btn {
+  background: #d73a49;
+  color: white;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.hotkey-clear-btn:hover {
+  background: #cb2431;
+}
+#hotkey-display-start-split, #hotkey-display-stop, #hotkey-display-reset-save, #hotkey-display-reset-no-save {
+  font-family: monospace;
+  background: #2a2f3a;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
 .cfg-actions { display:flex; justify-content:flex-end; gap:8px; }
 .modal .cfg-actions { margin-top: 8px; }
 .modal button { background:#2a2f3a; color:var(--fg); border:1px solid #2a2d37; padding:8px 12px; border-radius:6px; }

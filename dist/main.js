@@ -39,6 +39,8 @@
   console.log('initApp starting...');
   let runTitle = 'Run Title';
   let iconPath = ''; // Path to the run icon
+  let runsStarted = 0; // Number of runs started (reset and save)
+  let runsCompleted = 0; // Number of runs completed (reached the end)
   let splitNames = ['Split 1', 'Split 2', 'Split 3'];
   let splitIcons = ['', '', '']; // Icons for each split (empty = default icon)
   let backgroundColor = '#0e0f13'; // Background color for the app
@@ -77,6 +79,17 @@
     iconPath = savedState.iconPath || iconPath;
     splitNames = savedState.splitNames || splitNames;
     splitIcons = savedState.splitIcons || splitIcons;
+    runsStarted = savedState.runsStarted || runsStarted;
+    runsCompleted = savedState.runsCompleted || runsCompleted;
+    
+    // Load column visibility settings
+    if (typeof savedState.showSumBest === 'boolean') {
+      // Will be applied when DOM is ready via updateColumnVisibilityFromState()
+    }
+    if (typeof savedState.showBestComplete === 'boolean') {
+      // Will be applied when DOM is ready via updateColumnVisibilityFromState()
+    }
+    
     console.log('Loaded state from localStorage:', savedState);
     console.log('Loaded splitIcons:', splitIcons);
   }
@@ -91,6 +104,29 @@
   document.documentElement.style.setProperty('--best-complete-run-color', bestCompleteRunColor);
   document.documentElement.style.setProperty('--split-bg-1', splitBg1Color);
   document.documentElement.style.setProperty('--split-bg-2', splitBg2Color);
+  function updateColumnVisibilityFromState() {
+    const savedState = loadState();
+    if (savedState) {
+      // Apply column visibility from saved state
+      if (typeof savedState.showSumBest === 'boolean') {
+        const checkbox = document.getElementById('show-sum-best');
+        if (checkbox) checkbox.checked = savedState.showSumBest;
+        const sumBestRow = document.querySelector('tr[data-row="sum-best"]');
+        if (sumBestRow) {
+          sumBestRow.style.display = savedState.showSumBest ? '' : 'none';
+        }
+      }
+      if (typeof savedState.showBestComplete === 'boolean') {
+        const checkbox = document.getElementById('show-best-complete');
+        if (checkbox) checkbox.checked = savedState.showBestComplete;
+        const bestCompleteRow = document.querySelector('tr[data-row="best-complete"]');
+        if (bestCompleteRow) {
+          bestCompleteRow.style.display = savedState.showBestComplete ? '' : 'none';
+        }
+      }
+    }
+  }
+
   function saveState(state) {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
   }
@@ -224,6 +260,7 @@
       <div class="run-header">
         <div class="run-icon">🏁</div>
         <div class="run-title" id="run-title">Run Title</div>
+        <div class="run-stats" id="run-stats">0/0</div>
       </div>
       
       <table class="splits-table">
@@ -267,6 +304,8 @@
     
     // Re-initialize the splits interface
     renderRows();
+    updateColumnVisibilityFromState(); // Apply saved column visibility settings
+    updateRunStats(); // Update the run statistics display
     setActiveRow(-1);
     buildContextMenu();
   }
@@ -547,6 +586,224 @@
     console.log('getDisplaySettings returning:', cleanSettings);
     return cleanSettings;
   }
+  
+  // Hotkey management functions
+  function getHotkeySettings() {
+    const globalSettings = loadGlobalSettings();
+    return globalSettings.hotkeys || {
+      'start-split': 'Backspace',
+      'stop': null,
+      'reset-save': null,
+      'reset-no-save': null
+    };
+  }
+  
+  function saveHotkeySettings(hotkeys) {
+    const globalSettings = loadGlobalSettings();
+    globalSettings.hotkeys = hotkeys;
+    saveGlobalSettings(globalSettings);
+  }
+  
+  // Hotkey input handling
+  // Convert JavaScript key names to device_query Keycode format
+  function mapJsKeyToRustKey(jsKey) {
+    // Letters: JavaScript gives lowercase, Rust expects uppercase
+    if (jsKey.length === 1 && jsKey >= 'a' && jsKey <= 'z') {
+      return jsKey.toUpperCase();
+    }
+    
+    // Numbers: JavaScript gives "1", "2", etc., Rust expects "Key1", "Key2", etc.
+    if (jsKey >= '0' && jsKey <= '9') {
+      return `Key${jsKey}`;
+    }
+    
+    // Special keys mapping
+    const keyMap = {
+      ' ': 'Space',
+      'Enter': 'Return',
+      'Backspace': 'Backspace',
+      'Tab': 'Tab',
+      'Escape': 'Escape',
+      'Delete': 'Delete',
+      'Insert': 'Insert',
+      'Home': 'Home',
+      'End': 'End',
+      'PageUp': 'PageUp',
+      'PageDown': 'PageDown',
+      'ArrowUp': 'Up',
+      'ArrowDown': 'Down',
+      'ArrowLeft': 'Left',
+      'ArrowRight': 'Right',
+      'F1': 'F1', 'F2': 'F2', 'F3': 'F3', 'F4': 'F4',
+      'F5': 'F5', 'F6': 'F6', 'F7': 'F7', 'F8': 'F8',
+      'F9': 'F9', 'F10': 'F10', 'F11': 'F11', 'F12': 'F12',
+      'Shift': 'LShift',
+      'Control': 'LControl',
+      'Alt': 'LAlt',
+      'Meta': 'LMeta'
+    };
+    
+    return keyMap[jsKey] || jsKey;
+  }
+
+  function setupHotkeyInputs() {
+    const hotkeyInputs = ['start-split', 'stop', 'reset-save', 'reset-no-save', 'unsplit'];
+    
+    hotkeyInputs.forEach(action => {
+      const input = document.getElementById(`hotkey-input-${action}`);
+      if (input) {
+        // Handle focus to start listening
+        input.addEventListener('focus', () => {
+          input.value = 'Press a key...';
+          input.style.borderColor = '#4a90e2';
+        });
+        
+        // Handle blur to stop listening
+        input.addEventListener('blur', () => {
+          if (input.value === 'Press a key...') {
+            input.value = '';
+          }
+          input.style.borderColor = '#2a2d37';
+        });
+        
+        // Handle key press
+        input.addEventListener('keydown', (e) => {
+          e.preventDefault();
+          
+          // If Escape is pressed, clear the hotkey
+          if (e.key === 'Escape') {
+            clearHotkey(action);
+            input.blur();
+            return;
+          }
+          
+          // Don't allow certain keys
+          const forbiddenKeys = ['Tab', 'Enter', 'Shift', 'Control', 'Alt', 'Meta'];
+          if (forbiddenKeys.includes(e.key)) {
+            return;
+          }
+          
+          // Set the new hotkey
+          const mappedKey = mapJsKeyToRustKey(e.key);
+          setHotkey(action, e.key, mappedKey);
+          input.blur();
+        });
+      }
+    });
+  }
+  
+  function setHotkey(action, displayKey, mappedKey) {
+    const hotkeys = getHotkeySettings();
+    
+    // Check if this mapped key is already assigned to another action
+    for (const [existingAction, existingMappedKey] of Object.entries(hotkeys)) {
+      if (existingMappedKey === mappedKey && existingAction !== action) {
+        if (!confirm(`"${displayKey}" is already assigned to "${getActionDisplayName(existingAction)}". Do you want to reassign it to "${getActionDisplayName(action)}"?`)) {
+          return;
+        }
+        // Clear the existing assignment
+        hotkeys[existingAction] = null;
+        updateHotkeyDisplay(existingAction);
+      }
+    }
+    
+    // Set the new hotkey (store mapped key for comparison, but we'll display the original)
+    hotkeys[action] = mappedKey;
+    saveHotkeySettings(hotkeys);
+    updateHotkeyDisplay(action, displayKey);
+    
+    console.log(`Hotkey set: ${action} -> "${displayKey}" (mapped to "${mappedKey}")`);
+    
+    console.log(`Hotkey for ${action} set to: ${key}`);
+  }
+  
+  function clearHotkey(action) {
+    const hotkeys = getHotkeySettings();
+    hotkeys[action] = null;
+    saveHotkeySettings(hotkeys);
+    updateHotkeyDisplay(action);
+    
+    console.log(`Hotkey for ${action} cleared`);
+  }
+  
+  // Convert device_query Keycode format back to JavaScript key names for display
+  function mapRustKeyToJsKey(rustKey) {
+    // Letters: Rust gives uppercase, JavaScript expects lowercase for display
+    if (rustKey && rustKey.length === 1 && rustKey >= 'A' && rustKey <= 'Z') {
+      return rustKey.toLowerCase();
+    }
+    
+    // Numbers: Rust gives "Key1", "Key2", etc., JavaScript expects "1", "2", etc.
+    if (rustKey && rustKey.startsWith('Key') && rustKey.length === 4) {
+      const digit = rustKey[3];
+      if (digit >= '0' && digit <= '9') {
+        return digit;
+      }
+    }
+    
+    // Special keys reverse mapping
+    const keyMap = {
+      'Space': ' ',
+      'Return': 'Enter',
+      'Backspace': 'Backspace',
+      'Tab': 'Tab',
+      'Escape': 'Escape',
+      'Delete': 'Delete',
+      'Insert': 'Insert',
+      'Home': 'Home',
+      'End': 'End',
+      'PageUp': 'PageUp',
+      'PageDown': 'PageDown',
+      'Up': 'ArrowUp',
+      'Down': 'ArrowDown',
+      'Left': 'ArrowLeft',
+      'Right': 'ArrowRight',
+      'F1': 'F1', 'F2': 'F2', 'F3': 'F3', 'F4': 'F4',
+      'F5': 'F5', 'F6': 'F6', 'F7': 'F7', 'F8': 'F8',
+      'F9': 'F9', 'F10': 'F10', 'F11': 'F11', 'F12': 'F12',
+      'LShift': 'Shift',
+      'LControl': 'Control',
+      'LAlt': 'Alt',
+      'LMeta': 'Meta'
+    };
+    
+    return keyMap[rustKey] || rustKey;
+  }
+
+  function updateHotkeyDisplay(action, displayKey = null) {
+    const hotkeys = getHotkeySettings();
+    const display = document.getElementById(`hotkey-display-${action}`);
+    const input = document.getElementById(`hotkey-input-${action}`);
+    
+    if (display) {
+      if (displayKey) {
+        // Use provided display key
+        display.textContent = displayKey;
+      } else {
+        // Convert stored mapped key back to display format
+        const mappedKey = hotkeys[action];
+        const displayText = mappedKey ? mapRustKeyToJsKey(mappedKey) : 'Not Set';
+        display.textContent = displayText;
+      }
+    }
+    if (input) {
+      input.value = '';
+    }
+  }
+  
+  function getActionDisplayName(action) {
+    const names = {
+      'start-split': 'Start/Split',
+      'stop': 'Stop',
+      'reset-save': 'Reset + Save',
+      'reset-no-save': 'Reset + Don\'t Save',
+      'unsplit': 'Unsplit'
+    };
+    return names[action] || action;
+  }
+  
+  // Global function to make clearHotkey available in HTML onclick
+  window.clearHotkey = clearHotkey;
   
   function saveColumnVisibility(visibility) {
     const globalSettings = loadGlobalSettings();
@@ -876,6 +1133,30 @@
         document.documentElement.style.setProperty('--split-bg-2', splitBg2Color);
       }
       
+      // Load column visibility settings if present
+      if (typeof data.showSumBest === 'boolean') {
+        if (document.getElementById('show-sum-best')) {
+          document.getElementById('show-sum-best').checked = data.showSumBest;
+        }
+        // Update the display immediately
+        const sumBestRow = document.querySelector('tr[data-row="sum-best"]');
+        if (sumBestRow) {
+          sumBestRow.style.display = data.showSumBest ? '' : 'none';
+          console.log('Sum of Best row display set from save file to:', data.showSumBest ? 'visible' : 'none');
+        }
+      }
+      if (typeof data.showBestComplete === 'boolean') {
+        if (document.getElementById('show-best-complete')) {
+          document.getElementById('show-best-complete').checked = data.showBestComplete;
+        }
+        // Update the display immediately
+        const bestCompleteRow = document.querySelector('tr[data-row="best-complete"]');
+        if (bestCompleteRow) {
+          bestCompleteRow.style.display = data.showBestComplete ? '' : 'none';
+          console.log('Best Complete row display set from save file to:', data.showBestComplete ? 'visible' : 'none');
+        }
+      }
+      
       // Load display settings if present (filter out color settings)
       if (data.displaySettings && typeof data.displaySettings === 'object') {
         console.log('Loading display settings from file:', data.displaySettings);
@@ -991,6 +1272,15 @@
         updateDisplaySettings();
         document.documentElement.style.setProperty('--bg', backgroundColor);
       }
+      
+      // Load run statistics if present
+      if (typeof data.runsStarted === 'number') {
+        runsStarted = data.runsStarted;
+      }
+      if (typeof data.runsCompleted === 'number') {
+        runsCompleted = data.runsCompleted;
+      }
+      updateRunStats();
       
       // Save the file path and add to recent files
       saveSavePath(filePath);
@@ -1339,6 +1629,13 @@
     document.getElementById('show-sum-best').checked = displaySettings.showSumBest;
     document.getElementById('show-best-complete').checked = displaySettings.showBestComplete;
     
+    // Load and setup hotkey configuration
+    const hotkeys = getHotkeySettings();
+    ['start-split', 'stop', 'reset-save', 'reset-no-save', 'unsplit'].forEach(action => {
+      updateHotkeyDisplay(action);
+    });
+    setupHotkeyInputs();
+    
     cfgBackdrop.hidden = false;
   }
   function closeConfig() { cfgBackdrop.hidden = true; }
@@ -1469,7 +1766,15 @@
       const currentWidths = getColumnWidths();
       
       // Persist settings immediately
-      saveState({ runTitle, iconPath, splitNames, splitIcons, bestTotals, bestSegments, bestCompleteSplits, columnWidths: currentWidths, backgroundColor, runTitleColor, splitTableColor, totalTimerTextColor, totalTimerDigitsColor, sumBestSegmentsColor, bestCompleteRunColor, splitBg1Color, splitBg2Color });
+      saveState({ 
+        runTitle, iconPath, splitNames, splitIcons, bestTotals, bestSegments, bestCompleteSplits, 
+        columnWidths: currentWidths, backgroundColor, runTitleColor, splitTableColor, 
+        totalTimerTextColor, totalTimerDigitsColor, sumBestSegmentsColor, bestCompleteRunColor, 
+        splitBg1Color, splitBg2Color,
+        showSumBest: document.getElementById('show-sum-best')?.checked ?? true,
+        showBestComplete: document.getElementById('show-best-complete')?.checked ?? true,
+        runsStarted, runsCompleted
+      });
       // Reset and re-render (silent)
       doReset();
       renderRows();
@@ -2392,6 +2697,7 @@
   let lastAdvanceEpoch = 0; // timestamp of last split advance
   let finalTotalMs = 0;     // remembers the total time when last split finishes
   let paused = false;       // if true, timers are paused
+  let totalElapsedAtPause = 0; // total elapsed time when paused
   // elapsed ms for each segment (split local time) and cumulative totals
   let segmentElapsed = new Array(splitNames.length).fill(0);
   let totalCumulative = new Array(splitNames.length).fill(0); // finalized totals per split; 0 if not reached yet
@@ -2567,10 +2873,11 @@
 
   function totalElapsedNow(now) {
     if (currentSplit === 0) return 0;
+    if (paused) return totalElapsedAtPause;
     const idx = currentSplit - 1;
-  const prev = idx > 0 ? (totalCumulative[idx - 1] || 0) : 0;
-  const seg = (segmentElapsed[idx] || 0) + (paused ? 0 : (now - lastAdvanceEpoch));
-  return prev + seg;
+    const prev = idx > 0 ? (totalCumulative[idx - 1] || 0) : 0;
+    const seg = (segmentElapsed[idx] || 0) + (now - lastAdvanceEpoch);
+    return prev + seg;
   }
 
   function updateDiff(i, cumulative, currentSegment) {
@@ -2722,12 +3029,38 @@
       setActiveRow(currentSplit - 1);
     } else {
       // last split completed -> stop (set currentSplit to 0 means stopped)
-  // Use finalized cumulative total of the last split to avoid double-counting live segment
-  finalTotalMs = totalCumulative[totalCumulative.length - 1] || 0;
+      // Use finalized cumulative total of the last split to avoid double-counting live segment
+      finalTotalMs = totalCumulative[totalCumulative.length - 1] || 0;
+      
+      // Increment runs completed counter
+      runsCompleted++;
+      updateRunStats();
+      
       currentSplit = 0;
       lastAdvanceEpoch = 0;
       setActiveRow(-1);
     }
+  }
+
+  function unsplit() {
+    if (currentSplit <= 1 || paused) return; // cannot unsplit if on first split or earlier, or if paused
+    
+    const idx = currentSplit - 1; // current split index (0-based)
+    
+    // Go back to previous split
+    currentSplit -= 1;
+    
+    // Clear the data for the split we're backing out of
+    segmentElapsed[idx] = 0;
+    totalCumulative[idx] = 0;
+    
+    // Update visual indicator
+    setActiveRow(currentSplit - 1);
+    
+    // DO NOT touch lastAdvanceEpoch or any other timing variables
+    // The timer will continue naturally from where it was
+    
+    console.log(`Unsplit: returned to split ${currentSplit}`);
   }
 
   function resetRun() {
@@ -2754,6 +3087,10 @@
       document.body.appendChild(confirm);
   const done = (save) => {
         if (save) {
+          // Increment runs started counter when user chooses to save PBs
+          runsStarted++;
+          updateRunStats();
+          
           // Update PBs for each reached split
           for (let i = 0; i < splitNames.length; i++) {
             const tot = totalCumulative[i] || 0;
@@ -2774,7 +3111,15 @@
           // Get current column widths to include in save
           const currentWidths = getColumnWidths();
           // Persist runTitle, splitNames, and PBs
-          saveState({ runTitle, iconPath, splitNames, splitIcons, bestTotals, bestSegments, bestCompleteSplits, columnWidths: currentWidths, backgroundColor, runTitleColor, splitTableColor, totalTimerTextColor, totalTimerDigitsColor, sumBestSegmentsColor, bestCompleteRunColor, splitBg1Color, splitBg2Color });
+          saveState({ 
+            runTitle, iconPath, splitNames, splitIcons, bestTotals, bestSegments, bestCompleteSplits, 
+            columnWidths: currentWidths, backgroundColor, runTitleColor, splitTableColor, 
+            totalTimerTextColor, totalTimerDigitsColor, sumBestSegmentsColor, bestCompleteRunColor, 
+            splitBg1Color, splitBg2Color,
+            showSumBest: document.getElementById('show-sum-best')?.checked ?? true,
+            showBestComplete: document.getElementById('show-best-complete')?.checked ?? true,
+            runsStarted, runsCompleted
+          });
         }
         document.body.removeChild(confirm);
         // proceed to actual reset after decision
@@ -2788,7 +3133,47 @@
       });
       return; // wait for user decision
     }
+    // No completed splits, user is starting fresh - count as started run
+    runsStarted++;
+    updateRunStats();
     doReset();
+  }
+  
+  // Function to save personal bests without showing modal (for hotkeys)
+  function savePersonalBests() {
+    // Increment runs started counter when saving PBs via hotkey
+    runsStarted++;
+    updateRunStats();
+    
+    // Update PBs for each reached split
+    for (let i = 0; i < splitNames.length; i++) {
+      const tot = totalCumulative[i] || 0;
+      const seg = segmentElapsed[i] || 0;
+      const completed = tot > 0; // only finalized splits have a cumulative total stored
+      if (completed && (bestTotals[i] === 0 || tot < bestTotals[i])) bestTotals[i] = tot;
+      // Do NOT save Best This Segment for an in-progress split
+      if (completed && seg > 0 && (bestSegments[i] === 0 || seg < bestSegments[i])) bestSegments[i] = seg;
+    }
+    // If full run completed, update best complete run splits when improved
+    const final = totalCumulative[splitNames.length - 1] || 0;
+    if (final > 0) {
+      const prevBest = bestCompleteSplits?.[splitNames.length - 1] || 0;
+      if (prevBest === 0 || final < prevBest) {
+        bestCompleteSplits = totalCumulative.slice(0, splitNames.length);
+      }
+    }
+    // Get current column widths to include in save
+    const currentWidths = getColumnWidths();
+    // Persist runTitle, splitNames, and PBs
+    saveState({ 
+      runTitle, iconPath, splitNames, splitIcons, bestTotals, bestSegments, bestCompleteSplits, 
+      columnWidths: currentWidths, backgroundColor, runTitleColor, splitTableColor, 
+      totalTimerTextColor, totalTimerDigitsColor, sumBestSegmentsColor, bestCompleteRunColor, 
+      splitBg1Color, splitBg2Color,
+      showSumBest: document.getElementById('show-sum-best')?.checked ?? true,
+      showBestComplete: document.getElementById('show-best-complete')?.checked ?? true,
+      runsStarted, runsCompleted
+    });
   }
 
   function doReset() {
@@ -2799,8 +3184,16 @@
     totalCumulative = new Array(splitNames.length).fill(0);
     finalTotalMs = 0;
     paused = false;
+    totalElapsedAtPause = 0;
     setActiveRow(-1);
     tick();
+  }
+
+  function updateRunStats() {
+    const runStatsElement = document.getElementById('run-stats');
+    if (runStatsElement) {
+      runStatsElement.textContent = `${runsStarted}/${runsCompleted}`;
+    }
   }
 
   async function saveTimesToFile() {
@@ -2827,6 +3220,8 @@
       bestCompleteSplits,
       columnWidths: getColumnWidths(),
       displaySettings: getDisplaySettings(),
+      runsStarted,
+      runsCompleted,
       savedAt: new Date().toISOString()
     };
     
@@ -3055,10 +3450,13 @@
             // Process global keys regardless of window focus state
             const newKeys = await window.__TAURI__.core.invoke('check_global_keys');
             
-            // Check if Backspace was newly pressed
-            if (newKeys.includes('Backspace')) {
-              console.log('Global Backspace detected via polling');
-              handleGlobalShortcut();
+            // Check for any configured hotkeys
+            const hotkeys = getHotkeySettings();
+            for (const [action, key] of Object.entries(hotkeys)) {
+              if (key && newKeys.includes(key)) {
+                console.log(`Global hotkey detected: ${key} for action: ${action}`);
+                handleHotkeyAction(action);
+              }
             }
           } catch (error) {
             // Silently ignore polling errors to avoid spam
@@ -3075,22 +3473,83 @@
     }
   }
 
-  // Global shortcut handler function
-  function handleGlobalShortcut() {
-    console.log('Global Backspace pressed');
-    // Execute the same logic as the local keydown handler
-    if (paused) {
-      // resume
-      const now = performance.now();
-      lastAdvanceEpoch = now;
-      paused = false;
-      console.log('Timer resumed via global shortcut');
-    } else if (currentSplit === 0) {
-      startRunIfNeeded();
-      console.log('Timer started via global shortcut');
-    } else {
-      advanceSplit();
-      console.log('Split advanced via global shortcut');
+  // Hotkey action handler function
+  function handleHotkeyAction(action) {
+    console.log(`Hotkey action triggered: ${action}`);
+    
+    switch (action) {
+      case 'start-split':
+        // Execute the same logic as the old Backspace handler
+        if (paused) {
+          // resume
+          const now = performance.now();
+          lastAdvanceEpoch = now;
+          paused = false;
+          totalElapsedAtPause = 0; // Clear the paused total when resuming
+          console.log('Timer resumed via start-split hotkey');
+        } else if (currentSplit === 0) {
+          startRunIfNeeded();
+          console.log('Timer started via start-split hotkey');
+        } else {
+          advanceSplit();
+          console.log('Split advanced via start-split hotkey');
+        }
+        break;
+        
+      case 'stop':
+        if (!paused && currentSplit > 0) {
+          // Save the current elapsed time for this segment before pausing
+          const now = performance.now();
+          const segmentIndex = currentSplit - 1; // Convert to 0-based index
+          const runningTime = now - lastAdvanceEpoch;
+          
+          // Calculate total elapsed time including the current running time
+          const prev = segmentIndex > 0 ? (totalCumulative[segmentIndex - 1] || 0) : 0;
+          const currentSegmentTime = (segmentElapsed[segmentIndex] || 0) + runningTime;
+          totalElapsedAtPause = prev + currentSegmentTime;
+          
+          // Now update the segment elapsed time
+          if (segmentIndex < segmentElapsed.length) {
+            segmentElapsed[segmentIndex] += runningTime;
+          }
+          paused = true;
+          console.log('Timer stopped via stop hotkey');
+        } else if (paused) {
+          // If already paused, this acts as resume (like start-split)
+          const now = performance.now();
+          lastAdvanceEpoch = now;
+          paused = false;
+          totalElapsedAtPause = 0;
+          console.log('Timer resumed via stop hotkey (acting as resume)');
+        }
+        break;
+        
+      case 'reset-save':
+        if (currentSplit >= 0 || paused) {
+          // Perform reset and save PBs immediately without modal
+          savePersonalBests();
+          doReset();
+          console.log('Timer reset with save via reset-save hotkey');
+        }
+        break;
+        
+      case 'reset-no-save':
+        if (currentSplit >= 0 || paused) {
+          // Perform reset without saving PBs
+          doReset();
+          console.log('Timer reset without save via reset-no-save hotkey');
+        }
+        break;
+        
+      case 'unsplit':
+        if (currentSplit > 1 && !paused) {
+          unsplit();
+          console.log('Unsplit performed via unsplit hotkey');
+        }
+        break;
+        
+      default:
+        console.log(`Unknown hotkey action: ${action}`);
     }
   }
 
@@ -3274,7 +3733,14 @@
       }
       
       // Save to localStorage for persistence between sessions
-      saveState({ runTitle, iconPath, splitNames, splitIcons, bestTotals, bestSegments, bestCompleteSplits, backgroundColor, runTitleColor, splitTableColor, totalTimerTextColor, totalTimerDigitsColor, sumBestSegmentsColor, bestCompleteRunColor, splitBg1Color, splitBg2Color });
+      saveState({ 
+        runTitle, iconPath, splitNames, splitIcons, bestTotals, bestSegments, bestCompleteSplits, 
+        backgroundColor, runTitleColor, splitTableColor, totalTimerTextColor, totalTimerDigitsColor, 
+        sumBestSegmentsColor, bestCompleteRunColor, splitBg1Color, splitBg2Color,
+        showSumBest: document.getElementById('show-sum-best')?.checked ?? true,
+        showBestComplete: document.getElementById('show-best-complete')?.checked ?? true,
+        runsStarted, runsCompleted
+      });
       
       hideIconSelector();
     }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Speedrun Splitter</title>
+  <title>SplitRun</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -12,6 +12,7 @@
     <div class="run-header">
       <div class="run-icon">🏁</div>
       <div class="run-title" id="run-title">Run Title</div>
+      <div class="run-stats" id="run-stats">0/0</div>
     </div>
     
     <table class="splits-table">
@@ -63,6 +64,7 @@
         <button type="button" class="config-tab active" data-tab="general">General</button>
         <button type="button" class="config-tab" data-tab="table">Table</button>
         <button type="button" class="config-tab" data-tab="colors">Colors</button>
+        <button type="button" class="config-tab" data-tab="hotkeys">Hotkeys</button>
         <button type="button" class="config-tab" data-tab="splits">Splits</button>
       </div>
       
@@ -315,6 +317,65 @@
                   </div>
                 </label>
               </div>
+            </div>
+          </div>
+          
+          <!-- Hotkeys Tab -->
+          <div class="config-tab-content" data-tab="hotkeys">
+            <div class="cfg-section">
+              <label>Hotkey Configuration</label>
+              <p>Click in a hotkey field and press the key you want to assign. Press Escape to clear a hotkey.</p>
+              <table class="hotkey-config-table">
+                <thead>
+                  <tr>
+                    <th>Action</th>
+                    <th>Current Hotkey</th>
+                    <th>Set Hotkey</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Start/Split</td>
+                    <td><span id="hotkey-display-start-split">Backspace</span></td>
+                    <td>
+                      <input type="text" id="hotkey-input-start-split" placeholder="Click and press key..." readonly>
+                      <button type="button" class="hotkey-clear-btn" onclick="clearHotkey('start-split')">Clear</button>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Stop</td>
+                    <td><span id="hotkey-display-stop">Not Set</span></td>
+                    <td>
+                      <input type="text" id="hotkey-input-stop" placeholder="Click and press key..." readonly>
+                      <button type="button" class="hotkey-clear-btn" onclick="clearHotkey('stop')">Clear</button>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Reset + Save</td>
+                    <td><span id="hotkey-display-reset-save">Not Set</span></td>
+                    <td>
+                      <input type="text" id="hotkey-input-reset-save" placeholder="Click and press key..." readonly>
+                      <button type="button" class="hotkey-clear-btn" onclick="clearHotkey('reset-save')">Clear</button>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Reset + Don't Save</td>
+                    <td><span id="hotkey-display-reset-no-save">Not Set</span></td>
+                    <td>
+                      <input type="text" id="hotkey-input-reset-no-save" placeholder="Click and press key..." readonly>
+                      <button type="button" class="hotkey-clear-btn" onclick="clearHotkey('reset-no-save')">Clear</button>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Unsplit</td>
+                    <td><span id="hotkey-display-unsplit">Not Set</span></td>
+                    <td>
+                      <input type="text" id="hotkey-input-unsplit" placeholder="Click and press key..." readonly>
+                      <button type="button" class="hotkey-clear-btn" onclick="clearHotkey('unsplit')">Clear</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
           
