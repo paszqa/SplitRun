@@ -143,6 +143,29 @@
     try { localStorage.setItem(GLOBAL_SETTINGS_KEY, JSON.stringify(settings)); } catch {}
   }
   
+  function cleanupGlobalSettings() {
+    // Remove column visibility and other per-file settings from global settings
+    // Only keep global settings like recent files, last directories, hotkeys, etc.
+    const globalSettings = loadGlobalSettings();
+    const cleanSettings = {
+      recentFiles: globalSettings.recentFiles || [],
+      lastSaveDir: globalSettings.lastSaveDir,
+      lastImageDir: globalSettings.lastImageDir,
+      hotkeys: globalSettings.hotkeys,
+      displaySettings: globalSettings.displaySettings
+    };
+    
+    // Remove any undefined values
+    Object.keys(cleanSettings).forEach(key => {
+      if (cleanSettings[key] === undefined) {
+        delete cleanSettings[key];
+      }
+    });
+    
+    saveGlobalSettings(cleanSettings);
+    console.log('Cleaned up global settings, removed per-file column visibility settings');
+  }
+  
   function addRecentFile(filePath) {
     if (!filePath) return;
     
@@ -224,7 +247,7 @@
   
   async function updateRecentFilesList() {
     const globalSettings = loadGlobalSettings();
-    const recentFiles = globalSettings.recentFiles || [];
+    let recentFiles = globalSettings.recentFiles || [];
     const recentSection = document.getElementById('recent-section');
     const recentFilesList = document.getElementById('recent-files-list');
     
@@ -232,9 +255,13 @@
       recentSection.style.display = 'block';
       recentFilesList.innerHTML = '';
       
+      // Track which files actually exist and should be kept in the recent list
+      const validFiles = [];
+      
       for (const filePath of recentFiles) {
         const fileName = filePath.split('/').pop() || filePath;
         let iconPath = 'spliticons/s_icon.png'; // default icon
+        let fileExists = false;
         
         // Try to read the JSON file to get the iconPath
         try {
@@ -243,15 +270,21 @@
           if (data.iconPath && data.iconPath.trim() !== '') {
             iconPath = data.iconPath;
           }
+          fileExists = true;
+          validFiles.push(filePath); // Only add to valid files if we can read it
         } catch (error) {
-          console.log('Could not read file for icon:', filePath, error);
-          // Keep default icon
+          console.log('Could not read file for icon (file may not exist):', filePath, error);
+          // Don't add this file to validFiles - it will be removed from recent list
+          continue; // Skip creating button for non-existent files
         }
+        
+        // Convert icon path to displayable format (handles absolute paths properly)
+        const iconSrc = await getIconDisplaySrc(iconPath);
         
         const button = document.createElement('button');
         button.className = 'menu-button recent-file-button';
         button.innerHTML = `
-          <img src="${iconPath}" alt="Run Icon" class="recent-file-icon" onerror="this.src='spliticons/s_icon.png'">
+          <img src="${iconSrc}" alt="Run Icon" class="recent-file-icon" onerror="this.src='spliticons/s_icon.png'">
           <span class="recent-file-name">${fileName}</span>
         `;
         button.title = filePath;
@@ -260,6 +293,19 @@
           loadSplitFileFromPath(filePath);
         });
         recentFilesList.appendChild(button);
+      }
+      
+      // Update the recent files list to only include files that actually exist
+      if (validFiles.length !== recentFiles.length) {
+        const updatedGlobalSettings = loadGlobalSettings();
+        updatedGlobalSettings.recentFiles = validFiles;
+        saveGlobalSettings(updatedGlobalSettings);
+        console.log('Cleaned up recent files list, removed non-existent files');
+      }
+      
+      // Hide section if no valid files remain
+      if (validFiles.length === 0) {
+        recentSection.style.display = 'none';
       }
     } else {
       recentSection.style.display = 'none';
@@ -307,11 +353,11 @@
       </table>
       <table class="summary-table">
         <tbody>
-          <tr>
+          <tr data-row="best-complete">
             <td class="summary-label">Best Complete Run:</td>
             <td id="best-complete" class="summary-value">—</td>
           </tr>
-          <tr>
+          <tr data-row="sum-best">
             <td class="summary-label">Sum of Best Segments:</td>
             <td id="sum-best-segments" class="summary-value">—</td>
           </tr>
@@ -537,15 +583,48 @@
   
   function getColumnVisibility() {
     const globalSettings = loadGlobalSettings();
-    return globalSettings.columnVisibility || {
+    const state = loadState();
+    
+    // Get regular table column visibility from global settings
+    const globalVisibility = globalSettings.columnVisibility || {
       split: true,
       total: true,
       segment: true,
       diff: true,
+      diffSegment: true,
+      diffComplete: true,
       bestTotal: true,
       bestSegment: true,
       bestComplete: true
     };
+    
+    // Merge with per-file summary row visibility from current state
+    return {
+      split: globalVisibility.split ?? true,
+      total: globalVisibility.total ?? true,
+      segment: globalVisibility.segment ?? true,
+      diff: globalVisibility.diff ?? true,
+      diffSegment: globalVisibility.diffSegment ?? true,
+      diffComplete: globalVisibility.diffComplete ?? true,
+      bestTotal: globalVisibility.bestTotal ?? true,
+      bestSegment: globalVisibility.bestSegment ?? true,
+      bestComplete: globalVisibility.bestComplete ?? true
+    };
+  }
+  
+  function getSummaryRowVisibility() {
+    const state = loadState();
+    console.log('=== GET SUMMARY VISIBILITY DEBUG ===');
+    console.log('loadState() result:', state);
+    console.log('state?.showSumBest:', state?.showSumBest);
+    console.log('state?.showBestComplete:', state?.showBestComplete);
+    
+    const result = {
+      showSumBest: state?.showSumBest ?? true,
+      showBestComplete: state?.showBestComplete ?? true
+    };
+    console.log('getSummaryRowVisibility() returning:', result);
+    return result;
   }
   
   function getColumnWidths() {
@@ -563,6 +642,8 @@
   
   function getDisplaySettings() {
     const globalSettings = loadGlobalSettings();
+    const currentState = loadState();
+    
     let settings = globalSettings.displaySettings || {
       rowHeightPreset: 'normal',
       rowHeight: 36,
@@ -572,9 +653,7 @@
       totalTimerFontSize: 24,
       totalTimerBold: false,
       summaryFontSize: 16,
-      globalFontFamily: 'system-ui',
-      showSumBest: true,
-      showBestComplete: true
+      globalFontFamily: 'system-ui'
     };
     
     // Clean up any color properties that shouldn't be in displaySettings
@@ -587,9 +666,7 @@
       totalTimerFontSize: settings.totalTimerFontSize || 24,
       totalTimerBold: settings.totalTimerBold || false,
       summaryFontSize: settings.summaryFontSize || 16,
-      globalFontFamily: settings.globalFontFamily || 'system-ui',
-      showSumBest: settings.showSumBest ?? true,
-      showBestComplete: settings.showBestComplete ?? true
+      globalFontFamily: settings.globalFontFamily || 'system-ui'
     };
     
     // If we cleaned anything, save the clean version back to localStorage
@@ -826,6 +903,16 @@
     const globalSettings = loadGlobalSettings();
     globalSettings.columnVisibility = visibility;
     saveGlobalSettings(globalSettings);
+    
+    // Also save summary row visibility to current state for per-file persistence
+    const state = loadState() || {};
+    if (visibility.showSumBest !== undefined) {
+      state.showSumBest = visibility.showSumBest;
+    }
+    if (visibility.showBestComplete !== undefined) {
+      state.showBestComplete = visibility.showBestComplete;
+    }
+    saveState(state);
   }
   
   function saveColumnWidths(widths) {
@@ -838,11 +925,27 @@
     console.log('=== SAVE DISPLAY SETTINGS DEBUG ===');
     console.log('Settings object received:', settings);
     console.log('Settings globalFontFamily:', settings.globalFontFamily);
+    
+    // Create a copy of settings without per-file summary row visibility
+    const globalDisplaySettings = { ...settings };
+    delete globalDisplaySettings.showSumBest;
+    delete globalDisplaySettings.showBestComplete;
+    
     const globalSettings = loadGlobalSettings();
-    globalSettings.displaySettings = settings;
-    console.log('Global settings before save:', globalSettings);
+    globalSettings.displaySettings = globalDisplaySettings;
+    console.log('Global settings before save (without summary row visibility):', globalSettings);
     saveGlobalSettings(globalSettings);
     console.log('Saved to localStorage');
+  }
+
+  function saveSummaryRowVisibility(visibility) {
+    const currentState = loadState();
+    const updatedState = {
+      ...currentState,
+      showSumBest: visibility.showSumBest,
+      showBestComplete: visibility.showBestComplete
+    };
+    saveState(updatedState);
   }
 
   function updateColumnStyles(visibility, widths) {
@@ -1025,12 +1128,15 @@
       totalEl.style.fontSize = `${settings.totalTimerFontSize}px`;
     }
     
-    // Update summary visibility
+    // Update summary visibility from per-file state (not display settings)
     const summaryTable = document.querySelector('.summary-table');
     console.log('Summary table found:', !!summaryTable);
-    console.log('Settings showSumBest:', settings.showSumBest, 'showBestComplete:', settings.showBestComplete);
     
     if (summaryTable) {
+      // Get summary row visibility from per-file state
+      const summaryVisibility = getSummaryRowVisibility();
+      console.log('Settings showSumBest:', summaryVisibility.showSumBest, 'showBestComplete:', summaryVisibility.showBestComplete);
+      
       // Find rows by their value element IDs
       const sumBestElement = document.getElementById('sum-best-segments');
       const bestCompleteElement = document.getElementById('best-complete');
@@ -1042,12 +1148,12 @@
       console.log('Best Complete row found:', !!bestCompleteRow);
       
       if (sumBestRow) {
-        sumBestRow.style.display = settings.showSumBest ? '' : 'none';
-        console.log('Sum of Best row display set to:', settings.showSumBest ? 'visible' : 'none');
+        sumBestRow.style.display = summaryVisibility.showSumBest ? '' : 'none';
+        console.log('Sum of Best row display set to:', summaryVisibility.showSumBest ? 'visible' : 'none');
       }
       if (bestCompleteRow) {
-        bestCompleteRow.style.display = settings.showBestComplete ? '' : 'none';
-        console.log('Best Complete row display set to:', settings.showBestComplete ? 'visible' : 'none');
+        bestCompleteRow.style.display = summaryVisibility.showBestComplete ? '' : 'none';
+        console.log('Best Complete row display set to:', summaryVisibility.showBestComplete ? 'visible' : 'none');
       }
     }
   }
@@ -1174,6 +1280,16 @@
         }
       }
       
+      // Load regular table column visibility settings if present
+      if (data.columnVisibility && typeof data.columnVisibility === 'object') {
+        console.log('Loading column visibility from save file:', data.columnVisibility);
+        // Save the column visibility to global settings so it's available immediately
+        const globalSettings = loadGlobalSettings();
+        globalSettings.columnVisibility = data.columnVisibility;
+        saveGlobalSettings(globalSettings);
+        console.log('Column visibility loaded and saved to global settings');
+      }
+      
       // Load display settings if present (filter out color settings)
       if (data.displaySettings && typeof data.displaySettings === 'object') {
         console.log('Loading display settings from file:', data.displaySettings);
@@ -1188,9 +1304,7 @@
           totalTimerFontSize: data.displaySettings.totalTimerFontSize || 24,
           totalTimerBold: data.displaySettings.totalTimerBold || false,
           summaryFontSize: data.displaySettings.summaryFontSize || 16,
-          globalFontFamily: data.displaySettings.globalFontFamily || 'system-ui',
-          showSumBest: data.displaySettings.showSumBest ?? true,
-          showBestComplete: data.displaySettings.showBestComplete ?? true
+          globalFontFamily: data.displaySettings.globalFontFamily || 'system-ui'
         };
         
         console.log('Filtered display settings:', validDisplaySettings);
@@ -1309,6 +1423,9 @@
       // Re-render to show updated data
       renderRows();
       
+      // Apply loaded column visibility settings
+      updateColumnVisibility();
+      
       console.log('Configuration loaded from save file:', filePath);
     } catch (error) {
       console.error('Failed to load save file:', error);
@@ -1344,6 +1461,9 @@
   } catch {}
   // Load saved config + PBs ASAP so arrays initialize with correct sizes
   (function bootstrapFromStorage(){
+    // Clean up global settings to remove per-file settings
+    cleanupGlobalSettings();
+    
     // Only load global settings at startup (lastUsed folders for file dialogs)
     const globalSettings = loadGlobalSettings();
     fpCurrentPath = globalSettings.lastSaveDir || null;
@@ -1494,6 +1614,12 @@
       e.is_dir || imageExtensions.some(ext => e.name.toLowerCase().endsWith(ext))
     );
     
+    // Sort: directories first, then files, all alphabetically
+    filteredEntries.sort((a, b) => {
+      if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    
     for (const e of filteredEntries) {
       const div = document.createElement('div');
       div.className = 'fp-item';
@@ -1643,8 +1769,11 @@
     document.getElementById('split-bg-1-color-hex').value = splitBg1Color;
     document.getElementById('split-bg-2-color-picker').value = splitBg2Color;
     document.getElementById('split-bg-2-color-hex').value = splitBg2Color;
-    document.getElementById('show-sum-best').checked = displaySettings.showSumBest;
-    document.getElementById('show-best-complete').checked = displaySettings.showBestComplete;
+    
+    // Load summary row visibility settings separately
+    const summaryVisibility = getSummaryRowVisibility();
+    document.getElementById('show-sum-best').checked = summaryVisibility.showSumBest;
+    document.getElementById('show-best-complete').checked = summaryVisibility.showBestComplete;
     
     // Load and setup hotkey configuration
     const hotkeys = getHotkeySettings();
@@ -1687,7 +1816,7 @@
       }
     }
   });
-  cfgForm?.addEventListener('submit', (e) => {
+  cfgForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
       // Derive intended count even if the number input is momentarily empty/invalid
@@ -1750,7 +1879,7 @@
       };
       saveColumnWidths(widths);
       
-      // Save display settings
+      // Save display settings (without summary row visibility)
       const displaySettings = {
         rowHeightPreset: document.getElementById('row-height-preset').value,
         rowHeight: parseInt(document.getElementById('row-height-value').value) || 36,
@@ -1760,13 +1889,27 @@
         totalTimerFontSize: parseInt(document.getElementById('total-timer-font-size').value) || 24,
         totalTimerBold: document.getElementById('total-timer-bold').checked || false,
         summaryFontSize: parseInt(document.getElementById('summary-font-size').value) || 16,
-        globalFontFamily: document.getElementById('global-font-family').value || 'system-ui',
-        showSumBest: document.getElementById('show-sum-best').checked,
-        showBestComplete: document.getElementById('show-best-complete').checked
+        globalFontFamily: document.getElementById('global-font-family').value || 'system-ui'
       };
       console.log('=== FORM SUBMIT DISPLAY SETTINGS ===');
       console.log('Form submit displaySettings:', displaySettings);
       saveDisplaySettings(displaySettings);
+      
+      // Save summary row visibility separately (per-file setting)
+      const showSumBestEl = document.getElementById('show-sum-best');
+      const showBestCompleteEl = document.getElementById('show-best-complete');
+      console.log('=== FORM SUBMIT SUMMARY VISIBILITY DEBUG ===');
+      console.log('showSumBestEl found:', !!showSumBestEl);
+      console.log('showBestCompleteEl found:', !!showBestCompleteEl);
+      console.log('showSumBestEl.checked:', showSumBestEl?.checked);
+      console.log('showBestCompleteEl.checked:', showBestCompleteEl?.checked);
+      
+      const summaryVisibility = {
+        showSumBest: showSumBestEl ? showSumBestEl.checked : true,
+        showBestComplete: showBestCompleteEl ? showBestCompleteEl.checked : true
+      };
+      console.log('Form submit summary visibility object:', summaryVisibility);
+      saveSummaryRowVisibility(summaryVisibility);
       
       // Save color settings to global variables (not in displaySettings)
       backgroundColor = document.getElementById('background-color-hex').value || '#0e0f13';
@@ -1804,6 +1947,9 @@
       document.documentElement.style.setProperty('--total-timer-digits-color', totalTimerDigitsColor);
       document.documentElement.style.setProperty('--split-bg-1', splitBg1Color);
       document.documentElement.style.setProperty('--split-bg-2', splitBg2Color);
+      
+      // Save the configuration changes to the current save file
+      await saveTimesToFile();
     } finally {
       closeConfig();
     }
@@ -1953,6 +2099,17 @@
                 bestTotal: 100,
                 bestSegment: 100,
                 bestComplete: 100
+              },
+              columnVisibility: {
+                split: true,
+                total: true,
+                segment: true,
+                diff: true,
+                diffSegment: true,
+                diffComplete: true,
+                bestTotal: true,
+                bestSegment: true,
+                bestComplete: true
               },
               displaySettings: {
                 rowHeightPreset: 'normal',
@@ -2400,6 +2557,10 @@
             bestCompleteRunColor: bestCompleteRunColor || '#c9d1d9',
             splitBg1Color: splitBg1Color || '#0000000a',
             splitBg2Color: splitBg2Color || '#00000015',
+            ...getSummaryRowVisibility(),
+            runsStarted: runsStarted || 0,
+            runsCompleted: runsCompleted || 0,
+            columnVisibility: getColumnVisibility(),
             displaySettings: displaySettings
           };
           console.log('=== COMPLETE SAVE DATA ===');
@@ -2621,7 +2782,7 @@
     };
     saveColumnWidths(widths);
     
-    // Update display settings (font sizes, layout, visibility - NOT colors)
+    // Update display settings (font sizes, layout - NOT colors or summary row visibility)
     const displaySettings = {
       rowHeightPreset: document.getElementById('row-height-preset')?.value || 'normal',
       rowHeight: parseInt(document.getElementById('row-height-value')?.value) || 36,
@@ -2631,10 +2792,37 @@
       totalTimerFontSize: parseInt(document.getElementById('total-timer-font-size')?.value) || 24,
       totalTimerBold: document.getElementById('total-timer-bold')?.checked || false,
       summaryFontSize: parseInt(document.getElementById('summary-font-size')?.value) || 16,
-      globalFontFamily: document.getElementById('global-font-family')?.value || 'system-ui',
-      showSumBest: document.getElementById('show-sum-best')?.checked ?? true,
-      showBestComplete: document.getElementById('show-best-complete')?.checked ?? true
+      globalFontFamily: document.getElementById('global-font-family')?.value || 'system-ui'
     };
+    
+    // Update summary row visibility separately (per-file setting)
+    const showSumBestEl = document.getElementById('show-sum-best');
+    const showBestCompleteEl = document.getElementById('show-best-complete');
+    console.log('=== SUMMARY VISIBILITY DEBUG ===');
+    console.log('showSumBestEl found:', !!showSumBestEl);
+    console.log('showBestCompleteEl found:', !!showBestCompleteEl);
+    console.log('showSumBestEl.checked:', showSumBestEl?.checked);
+    console.log('showBestCompleteEl.checked:', showBestCompleteEl?.checked);
+    
+    const summaryVisibility = {
+      showSumBest: showSumBestEl ? showSumBestEl.checked : true,
+      showBestComplete: showBestCompleteEl ? showBestCompleteEl.checked : true
+    };
+    console.log('Summary visibility object:', summaryVisibility);
+    saveSummaryRowVisibility(summaryVisibility);
+    
+    // Apply visibility changes to DOM immediately
+    const sumBestRow = document.querySelector('tr[data-row="sum-best"]');
+    const bestCompleteRow = document.querySelector('tr[data-row="best-complete"]');
+    
+    if (sumBestRow) {
+      sumBestRow.style.display = summaryVisibility.showSumBest ? '' : 'none';
+      console.log('Sum of Best row display set to:', summaryVisibility.showSumBest ? 'visible' : 'none');
+    }
+    if (bestCompleteRow) {
+      bestCompleteRow.style.display = summaryVisibility.showBestComplete ? '' : 'none';
+      console.log('Best Complete row display set to:', summaryVisibility.showBestComplete ? 'visible' : 'none');
+    }
     
     console.log('=== FONT FAMILY DEBUG ===');
     const fontFamilyElement = document.getElementById('global-font-family');
@@ -2787,8 +2975,30 @@
   
   // Helper: any modal open (config or PB prompt)?
   function isModalOpen() {
-    const el = document.querySelector('.modal-backdrop:not([hidden])');
-    return !!el;
+    // Check for configuration modal
+    const cfgBackdrop = document.getElementById('cfg-backdrop');
+    const cfgOpen = cfgBackdrop && !cfgBackdrop.hidden;
+    
+    // Check for file browser modal
+    const fpBackdrop = document.getElementById('file-backdrop');
+    const fpOpen = fpBackdrop && !fpBackdrop.hidden;
+    
+    // Check for other modal backdrops with the modal-backdrop class
+    const otherModal = document.querySelector('.modal-backdrop:not([hidden])');
+    const otherOpen = !!otherModal;
+    
+    const isOpen = cfgOpen || fpOpen;// || otherOpen;
+    if (isOpen) {
+      console.log('Modal detected as open:', {
+        cfg: cfgOpen,
+        fileBrowser: fpOpen,
+        other: otherOpen,
+        cfgElement: cfgBackdrop,
+        fpElement: fpBackdrop,
+        otherElement: otherModal
+      });
+    }
+    return isOpen;
   }
 
   function pad(n, w=2) { return String(n).padStart(w, '0'); }
@@ -3236,7 +3446,9 @@
       bestSegments,
       bestCompleteSplits,
       columnWidths: getColumnWidths(),
+      columnVisibility: getColumnVisibility(),
       displaySettings: getDisplaySettings(),
+      ...getSummaryRowVisibility(),
       runsStarted,
       runsCompleted,
       savedAt: new Date().toISOString()
@@ -3467,10 +3679,26 @@
             // Process global keys regardless of window focus state
             const newKeys = await window.__TAURI__.core.invoke('check_global_keys');
             
+            // Debug: Log detected keys (but only if any were detected to avoid spam)
+            if (newKeys && newKeys.length > 0) {
+              console.log('Keys detected:', newKeys);
+            }
+            
             // Check for any configured hotkeys
             const hotkeys = getHotkeySettings();
+            
+            // Debug: Log configured hotkeys once every 100 iterations to avoid spam
+            if (Math.random() < 0.01) {
+              console.log('Configured hotkeys:', hotkeys);
+            }
+            
             for (const [action, key] of Object.entries(hotkeys)) {
               if (key && newKeys.includes(key)) {
+                // Don't process hotkeys if a modal is open
+                if (isModalOpen()) {
+                  console.log(`Global hotkey blocked: ${key} for action: ${action} (modal is open)`);
+                  continue;
+                }
                 console.log(`Global hotkey detected: ${key} for action: ${action}`);
                 handleHotkeyAction(action);
               }
@@ -3493,6 +3721,12 @@
   // Hotkey action handler function
   function handleHotkeyAction(action) {
     console.log(`Hotkey action triggered: ${action}`);
+    
+    // Don't process hotkeys if a modal is open
+    if (isModalOpen()) {
+      console.log(`Hotkey action blocked: ${action} (modal is open)`);
+      return;
+    }
     
     switch (action) {
       case 'start-split':
@@ -3612,9 +3846,9 @@
     
     // Load default icons from spliticons/
     const defaultIcons = [
-      'apple1.png', 'apple2.png', 'arrow1.png', 'arrow2.png', 'arrow3.png', 'banana1.png', 'banana2.png', 'bomb.png', 'book1.png', 'book2.png', 'box.png', 'boy1.png', 'boy2.png', 'bzzt.png', 'car1.png', 'car2.png', 'car3.png', 'cat.png', 'check1.png', 'check2.png', 'check3.png',
-      'cross1.png', 'cross2.png', 'cross3.png', 'crown.png', 'egg.png', 'explosion.png', 'evil1.png', 'evil2.png',
-      'eye1.png', 'factory.png', 'finish.png', 'flag1.png', 'flag2.png', 'flag3.png', 'flag4.png', 'flag5.png', 'gear.png', 'gem.png', 'house1.png', 'ok.png', 'skull.png', 'stairs.png', 's_icon.png', 'star1.png', 'star2.png', 'star3.png', 'sun1.png', 'sword1.png', 'sword2.png', 'tomato.png', 'town1.png', 'town2.png'
+      'apple1.png', 'apple2.png', 'arrow1.png', 'arrow2.png', 'arrow3.png', 'ball1.png', 'ball2.png', 'banana1.png', 'banana2.png', 'boat.png', 'bomb.png', 'book1.png', 'book2.png', 'box.png', 'boy1.png', 'boy2.png', 'bridge.png', 'bzzt.png', 'car1.png', 'car2.png', 'car3.png', 'castle.png', 'cat.png', 'check1.png', 'check2.png', 'check3.png',
+      'cross1.png', 'cross2.png', 'cross3.png', 'crown.png', 'door1.png', 'door2.png', 'egg.png', 'explosion.png', 'evil1.png', 'evil2.png',
+      'eye1.png', 'factory.png', 'finish.png', 'flag1.png', 'flag2.png', 'flag3.png', 'flag4.png', 'flag5.png', 'gear.png', 'gem.png', 'girl1.png', 'girl2.png', 'hammer.png', 'house1.png', 'labyrinth.png', 'labyrinth2.png', 'leaf1.png', 'leaf2.png', 'mushroom.png', 'ok.png', 'palm.png', 'puzzle.png', 'rooster.png', 'sadblob.png', 'skull.png', 'snake.png', 'spaceship.png', 'stairs.png', 's_icon.png', 'star1.png', 'star2.png', 'star3.png', 'sun1.png', 'sword1.png', 'sword2.png', 'tomato.png', 'town1.png', 'town2.png', 'tracks.png', 'trash.png', 'water.png'
     ];
     
     for (const icon of defaultIcons) {
